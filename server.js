@@ -4,6 +4,8 @@ import { spawn } from 'child_process';
 import path from 'path';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import https from 'https';
+import http from 'http';
 
 dotenv.config();
 
@@ -72,8 +74,6 @@ app.post('/api/info', (req, res) => {
       }
     };
 
-    const https = require('https');
-    
     const rapidReq = https.request(options, function (rapidRes) {
       const chunks = [];
 
@@ -168,9 +168,6 @@ app.get('/api/download', (req, res) => {
     }
 
     console.log(`[INSTANT STREAM] Proxying URL for file: ${safeTitle}`);
-    
-    const https = require('https');
-    const http = require('http');
     
     const client = url.startsWith('https') ? https : http;
 
