@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'Britney';
+  src: url('/fonts/Britney_Complete/Fonts/WEB/fonts/Britney-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Quicksand';
+  src: url('/fonts/Quicksand_Complete/Fonts/WEB/fonts/Quicksand-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'KidzhoodArabicDEMO';
+  src: url('/fonts/kidzhood-arabic-demo/KidzhoodArabicDEMO-Light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+}
+
+@theme {
+  --font-inter: "Inter", sans-serif;
+  --font-britney: "Britney", cursive;
+  --font-quicksand: "Quicksand", sans-serif;
+  --font-kidzhood: "KidzhoodArabicDEMO", sans-serif;
+  
+  --color-neo-yellow: #FFFF00;
+  --color-neo-green: #00FF00;
+  --color-neo-pink: #FF00FF;
+  --color-neo-blue: #0000FF;
+  --color-neo-white: #FFFFFF;
+  --color-neo-black: #000000;
+  
+  --border-neo: 4px solid var(--color-neo-black);
+  --shadow-neo: 8px 8px 0px 0px var(--color-neo-black);
+  --shadow-neo-sm: 4px 4px 0px 0px var(--color-neo-black);
+}
+
+body {
+  font-family: var(--font-inter);
+  background-color: var(--color-neo-white);
+  color: var(--color-neo-black);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+.neo-box {
+  background-color: var(--color-neo-white);
+  border: var(--border-neo);
+  box-shadow: var(--shadow-neo);
+  transition: all 0.1s ease-in;
+}
+
+.neo-box:active {
+  box-shadow: 2px 2px 0px 0px var(--color-neo-black);
+  transform: translate(6px, 6px);
+}
+
+.neo-btn {
+  @apply bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] transition-all duration-100 ease-in px-6 py-2 font-black uppercase text-lg cursor-pointer inline-flex items-center justify-center gap-2;
+}
+
+.neo-input {
+  @apply border-[4px] border-black bg-white p-3 md:p-4 font-bold text-base md:text-xl outline-none focus:bg-neo-yellow shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] w-full;
+}
+
+.neo-text-stroke {
+  -webkit-text-stroke: 2px black;
+  color: white;
+}
+
+.bg-dot-pattern {
+  background-image: radial-gradient(var(--color-neo-black) 1px, transparent 0);
+  background-size: 20px 20px;
+}
+
+.neo-btn-green {
+  background-color: #d1ffbd; /* Soft lime green as in the image */
+  border: 4px solid black;
+  color: #1a1a1a;
+  padding: 1rem;
+  font-weight: 800;
+  font-size: 1.5rem;
+  text-transform: uppercase;
+  transition: all 0.1s ease;
+  width: 100%;
+  cursor: pointer;
+}
+
+.neo-btn-green:hover {
+  transform: translate(-4px, -4px);
+  box-shadow: 4px 4px 0px black;
+}
+
+.neo-btn-green:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+.neo-modal-overlay {
+  background-color: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+}
+
+.neo-modal-content {
+  background-color: var(--color-neo-white);
+  border: 8px solid black;
+  box-shadow: 20px 20px 0px 0px var(--color-neo-pink);
+  transform: rotate(-1deg);
+}
