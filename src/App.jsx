@@ -73,14 +73,18 @@ function App() {
     }
   };
 
-  const handleDownload = (formatId, downloadType, directUrl) => {
-    // Pull the title directly from the videoData state object we saved during process
+  const handleDownload = (formatId, downloadType) => {
+    // Pull the title from saved video details state
     const videoTitle = videoDetails?.title || 'video';
     
-    // Create an automated window query link redirect passing variables cleanly
-    const backendProxyUrl = `https://vanilla-downloader.onrender.com/api/download?url=${encodeURIComponent(directUrl)}&title=${encodeURIComponent(videoTitle)}&type=${downloadType}`;
+    // Send the original YouTube URL + formatId to the backend.
+    // yt-dlp resolves the stream URL fresh on every request (avoids expiry issues).
+    const backendProxyUrl = `https://vanilla-downloader.onrender.com/api/download` +
+      `?url=${encodeURIComponent(url)}` +
+      `&formatId=${encodeURIComponent(formatId)}` +
+      `&title=${encodeURIComponent(videoTitle)}` +
+      `&type=${downloadType}`;
     
-    // Fire off native browser background tab trigger saving natively instantly!
     window.open(backendProxyUrl, '_blank');
   };
 
