@@ -40,7 +40,7 @@ const Header = ({ language, setLanguage, installPrompt, onInstallClick, t: appTr
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
+        <div className="flex flex-col-reverse md:flex-row items-end md:items-center gap-2 md:gap-4 flex-shrink-0">
           {/* Install Button */}
           {installPrompt && (
             <button
