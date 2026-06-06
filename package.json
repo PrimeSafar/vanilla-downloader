@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "render-build": "pip install yt-dlp || pip install yt-dlp --break-system-packages && npm install && npm run build",
+    "render-build": "curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ./yt-dlp && chmod +x ./yt-dlp && npm install && npm run build",
     "start": "node server.js"
   },
   "dependencies": {

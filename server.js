@@ -1,5 +1,6 @@
 import express from 'express';
 import { spawn } from 'child_process';
+import { existsSync } from 'fs';
 import path from 'path';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -9,8 +10,12 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// yt-dlp binary name (works on Linux/Mac/Windows with PATH set)
-const YTDLP = process.env.YTDLP_PATH || 'yt-dlp';
+// Find yt-dlp binary: prefer ./yt-dlp (downloaded during build on Render),
+// fallback to system PATH for local development
+const YTDLP = process.env.YTDLP_PATH ||
+  (existsSync('./yt-dlp') ? './yt-dlp' : 'yt-dlp');
+
+console.log(`[yt-dlp] Using binary: ${YTDLP}`);
 
 // Secure CORS to only allow your Firebase app and localhost
 const allowedOrigins = [
