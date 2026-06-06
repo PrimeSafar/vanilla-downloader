@@ -227,7 +227,7 @@ const __dirname = path.resolve();
 app.use(express.static(path.join(__dirname, 'dist')));
 
 // Fallback catch-all to route frontend refreshes cleanly back to your single page app index
-app.get('*', (req, res) => {
+app.get('/{*path}', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
