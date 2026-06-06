@@ -2,10 +2,12 @@
 import express from 'express';
 import { spawn } from 'child_process';
 import path from 'path';
+import cors from 'cors';
 
 const app = express();
 const PORT = process.env.PORT || 3000; // Render automatically injects its own port number here
 
+app.use(cors());
 // 2. Middleware to read incoming JSON request bodies safely
 app.use(express.json());
 
@@ -225,6 +227,11 @@ app.get('/api/download', (req, res) => {
 // Serve compiled static Vite frontend files out of the dist folder
 const __dirname = path.resolve();
 app.use(express.static(path.join(__dirname, 'dist')));
+
+// Return 404 JSON for any unmatched /api/ routes (prevents serving HTML as JSON)
+app.use('/api', (req, res) => {
+    res.status(404).json({ error: "API endpoint not found." });
+});
 
 // Fallback catch-all to route frontend refreshes cleanly back to your single page app index
 app.get('/{*path}', (req, res) => {

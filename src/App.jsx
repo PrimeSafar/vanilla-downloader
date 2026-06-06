@@ -50,7 +50,7 @@ function App() {
     setStatus('CONNECTING TO SERVER...');
     
     try {
-      const response = await fetch('/api/info', {
+      const response = await fetch('https://vanilla-downloader.onrender.com/api/info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
@@ -78,7 +78,7 @@ function App() {
     const videoTitle = videoDetails?.title || 'video';
     
     // Create an automated window query link redirect passing variables cleanly
-    const directDownloadUrl = `/api/download?url=${encodeURIComponent(url)}&formatId=${formatId}&type=${downloadType}&title=${encodeURIComponent(videoTitle)}`;
+    const directDownloadUrl = `https://vanilla-downloader.onrender.com/api/download?url=${encodeURIComponent(url)}&formatId=${formatId}&type=${downloadType}&title=${encodeURIComponent(videoTitle)}`;
     
     // Fire off native browser background tab trigger saving natively instantly!
     window.open(directDownloadUrl, '_blank');

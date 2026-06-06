@@ -13,6 +13,11 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['logo.png'],
+      workbox: {
+        navigateFallbackDenylist: [/^\/api\//],
+        skipWaiting: true,
+        clientsClaim: true,
+      },
       manifest: {
         name: 'VanillaDownloader',
         short_name: 'VanillaDownloader',
