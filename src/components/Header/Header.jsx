@@ -45,7 +45,7 @@ const Header = ({ language, setLanguage, installPrompt, onInstallClick, t: appTr
           {installPrompt && (
             <button
               onClick={onInstallClick}
-              className="neo-btn bg-neo-blue text-white hover:bg-neo-pink hover:-translate-y-1 !px-3 !py-2 md:!px-6 md:!py-2 font-inter"
+              className="neo-btn bg-neo-blue text-black hover:bg-neo-pink hover:-translate-y-1 !px-3 !py-2 md:!px-6 md:!py-2 font-inter"
               aria-label="Install App"
             >
               <span className="font-black text-sm md:text-base font-inter">{appTranslations?.installBtn || 'INSTALL APP'}</span>
