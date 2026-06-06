@@ -47,7 +47,7 @@ function App() {
     setIsLoading(true);
     setOptions(null);
     setVideoDetails(null);
-    setStatus('CONNECTING TO SERVER...');
+    setStatus('CONNECTING TO SERVER.');
     
     try {
       const response = await fetch('https://vanilla-downloader.onrender.com/api/info', {
