@@ -34,7 +34,8 @@ app.post('/api/info', (req, res) => {
         "--dump-json",
         "--no-playlist",
         "--no-check-certificates",
-        "--extractor-args", "youtube:player_client=web,android",
+        "--force-ipv4",
+        "--extractor-args", "youtube:player_client=android,ios",
         VideoUrl
     ]);
 
@@ -186,7 +187,8 @@ app.get('/api/download', (req, res) => {
             '-o', '-',
             '--no-playlist',
             '--no-check-certificates',
-            '--extractor-args', "youtube:player_client=web,android",
+            '--force-ipv4',
+            '--extractor-args', "youtube:player_client=android,ios",
             url
         ];
     } else {
@@ -198,7 +200,8 @@ app.get('/api/download', (req, res) => {
             '-o', '-',
             '--no-playlist',
             '--no-check-certificates',
-            '--extractor-args', "youtube:player_client=web,android",
+            '--force-ipv4',
+            '--extractor-args', "youtube:player_client=android,ios",
             url
         ];
     }
