@@ -34,7 +34,7 @@ const Header = ({ language, setLanguage, installPrompt, onInstallClick, t: appTr
           <h1 className="text-2xl sm:text-3xl md:text-5xl font-black italic uppercase bg-white text-black border-[3px] md:border-[4px] border-black px-2 sm:px-4 py-1 md:py-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] md:shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] -rotate-1 leading-tight truncate max-w-[200px] sm:max-w-none">
             {current.title}
           </h1>
-          <p className="font-bold text-sm md:text-lg mt-2 bg-neo-pink text-black px-2 md:px-3 py-0.5 md:py-1 border-[2px] md:border-[3px] border-black rotate-1 whitespace-nowrap">
+          <p className="font-bold  text-sm md:text-lg mt-2 bg-neo-pink text-black px-2 md:px-3 py-0.5 md:py-1 border-[2px] md:border-[3px] border-black rotate-1 whitespace-nowrap">
             {current.subtitle}
           </p>
         </div>
