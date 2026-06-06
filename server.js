@@ -3,11 +3,30 @@ import express from 'express';
 import { spawn } from 'child_process';
 import path from 'path';
 import cors from 'cors';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000; // Render automatically injects its own port number here
 
-app.use(cors());
+// Secure CORS to only allow your Firebase app and localhost
+const allowedOrigins = [
+  'https://vanilla-downloader.web.app',
+  'https://vanilla-downloader.firebaseapp.com',
+  'http://localhost:5173' // Vite default local dev port
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+}));
+
 // 2. Middleware to read incoming JSON request bodies safely
 app.use(express.json());
 
@@ -20,210 +39,160 @@ app.get('/api/hello', (req, res) => {
 // POST ROUTE: LINK ANALYSIS (PROCESS BUTTON)
 // ==========================================
 app.post('/api/info', (req, res) => {
-    // Safety Guard: Detect empty bodies instantly
     const VideoUrl = req.body ? req.body.url : null;
 
     if (!VideoUrl) {
         return res.status(400).json({ error: "URL is required!" });
     }
 
-    console.log("Backend caught the link. Running optimized yt-dlp analysis for:", VideoUrl);
-
-    // Spawn the child process tool globally for the cloud system layout
-    const ytDlp = spawn('./bin/yt-dlp', [
-        "--dump-json",
-        "--no-playlist",
-        "--no-check-certificates",
-        "--force-ipv4",
-        "--extractor-args", "youtube:player_client=android,ios",
-        VideoUrl
-    ]);
-
-    let outputData = "";
-    let errorData = "";
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = VideoUrl.match(regExp);
+    const videoId = (match && match[2].length === 11) ? match[2] : null;
     
-    ytDlp.on('error', (err) => {
-        console.error("Failed to start yt-dlp binary:", err);
-        return res.status(500).json({ error: "yt-dlp engine not found or failed to start." });
-    });
+    if (!videoId) {
+        return res.status(400).json({ error: "Invalid YouTube URL" });
+    }
 
-    ytDlp.stderr.on('data', (chunk) => {
-        errorData += chunk;
-    });
+    console.log("Backend caught the link. Fetching details for Video ID:", videoId);
+
+    const rapidApiKey = process.env.RAPIDAPI_KEY;
+    if (!rapidApiKey) {
+        console.error("Missing RAPIDAPI_KEY environment variable.");
+        return res.status(500).json({ error: "Server misconfiguration. API key missing." });
+    }
+
+    const options = {
+      method: 'GET',
+      hostname: 'youtube138.p.rapidapi.com',
+      port: null,
+      path: `/video/details/?id=${videoId}`,
+      headers: {
+        'x-rapidapi-key': rapidApiKey,
+        'x-rapidapi-host': 'youtube138.p.rapidapi.com'
+      }
+    };
+
+    const https = require('https');
     
-    ytDlp.stdout.on('data', (chunk) => {
-        outputData += chunk;
-    });
+    const rapidReq = https.request(options, function (rapidRes) {
+      const chunks = [];
 
-    ytDlp.on('close', (code) => {
-        console.log("yt-dlp process closed with exit code:", code);
-        
-        if (code !== 0) {
-            console.error("yt-dlp error output:", errorData);
-            return res.status(500).json({ 
-                error: "YouTube extraction failed. Check your link or try another one.", 
-                details: errorData 
-            });
-        }
+      rapidRes.on('data', function (chunk) {
+        chunks.push(chunk);
+      });
 
+      rapidRes.on('end', function () {
         try {
-            const fullData = JSON.parse(outputData);
+          const body = Buffer.concat(chunks);
+          const fullData = JSON.parse(body.toString());
 
-            if (!fullData.formats) {
-                return res.status(500).json({ error: "No downloadable formats found for this URL." });
-            }
+          if (!fullData || !fullData.title) {
+             return res.status(500).json({ error: "No video data found or invalid response from RapidAPI." });
+          }
 
-            // --- 1. SEPARATE & CLEAN MUSIC FORMATS ---
-            let audioFormats = fullData.formats
-                .filter(item => {
-                    const noVideo = !item.vcodec || item.vcodec === 'none' || item.vcodec === null;
-                    const hasAudio = item.acodec && item.acodec !== 'none' && item.acodec !== null;
-                    return noVideo && hasAudio;
-                })
-                .map(item => ({
-                    formatId: item.format_id,
-                    quality: item.abr ? `${Math.round(item.abr)}kbps` : (item.tbr ? `${Math.round(item.tbr)}kbps` : '128kbps'),
-                    ext: 'mp3'
-                }));
+          const durationSeconds = fullData.lengthSeconds || 0;
+          const durationStr = `${Math.floor(durationSeconds/60)}:${(durationSeconds%60).toString().padStart(2, '0')}`;
+          
+          let videoFormats = [];
+          if (fullData.streamingData && fullData.streamingData.formats) {
+            videoFormats = fullData.streamingData.formats.map(f => ({
+                formatId: f.itag.toString(),
+                quality: f.qualityLabel || `${f.height}p`,
+                ext: f.mimeType ? f.mimeType.split(';')[0].split('/')[1] : 'mp4',
+                url: f.url
+            }));
+          }
 
-            if (audioFormats.length === 0) {
-                audioFormats = fullData.formats
-                    .filter(item => item.acodec && item.acodec !== 'none' && item.acodec !== null)
-                    .slice(0, 2)
-                    .map(item => ({
-                        formatId: item.format_id,
-                        quality: item.abr ? `${Math.round(item.abr)}kbps` : '128kbps',
-                        ext: 'mp3'
-                    }));
-            }
-
-            audioFormats = audioFormats
-                .sort((a, b) => (parseFloat(b.quality) || 0) - (parseFloat(a.quality) || 0))
-                .slice(0, 3);
-
-            // --- 2. SEPARATE & CLEAN VIDEO FORMATS ---
-            let videoFormats = fullData.formats
-                .filter(item => {
-                    const hasVideo = item.vcodec && item.vcodec !== 'none' && item.vcodec !== null;
-                    const hasAudio = item.acodec && item.acodec !== 'none' && item.acodec !== null;
-                    return hasVideo && hasAudio && item.height;
-                })
-                .map(item => ({
-                    formatId: item.format_id,
-                    quality: `${item.height}p`,
-                    ext: item.ext || 'mp4'
+          let audioFormats = [];
+          if (fullData.streamingData && fullData.streamingData.adaptiveFormats) {
+            audioFormats = fullData.streamingData.adaptiveFormats
+                .filter(f => f.mimeType && f.mimeType.includes('audio'))
+                .map(f => ({
+                    formatId: f.itag.toString(),
+                    quality: f.audioQuality ? f.audioQuality.replace('AUDIO_QUALITY_', '').toLowerCase() : `${Math.round(f.bitrate/1000)}kbps`,
+                    ext: f.mimeType ? f.mimeType.split(';')[0].split('/')[1] : 'mp3',
+                    url: f.url
                 }))
-                .filter((v, i, a) => a.findIndex(t => t.quality === v.quality) === i)
-                .sort((a, b) => (parseInt(b.quality) || 0) - (parseInt(a.quality) || 0))
-                .slice(0, 4);
+                .slice(0, 3);
+          }
 
-            if (videoFormats.length === 0) {
-                const bestVideoOnly = fullData.formats
-                    .filter(item => item.vcodec && item.vcodec !== 'none' && item.height)
-                    .sort((a, b) => (b.height || 0) - (a.height || 0))
-                    .slice(0, 1)
-                    .map(item => ({
-                        formatId: item.format_id,
-                        quality: `${item.height}p (No Audio)`,
-                        ext: item.ext || 'mp4'
-                    }));
-                videoFormats.push(...bestVideoOnly);
-            }
+          const responsePayload = {
+              message: "Data filtered successfully!",
+              videoDetails: {
+                  title: fullData.title || "Unknown Video",
+                  thumbnail: fullData.thumbnails && fullData.thumbnails.length > 0 ? fullData.thumbnails[fullData.thumbnails.length - 1].url : "",
+                  duration: durationStr,
+              },
+              buttonFormats: {
+                  music: audioFormats,
+                  video: videoFormats
+              }
+          };
 
-            // --- 3. RESPOND WITH CLEAN NORMALIZED JSON DATA ---
-            const responsePayload = {
-                message: "Data filtered successfully!",
-                videoDetails: {
-                    title: fullData.title || "Unknown Video",
-                    thumbnail: fullData.thumbnail || "",
-                    duration: fullData.duration_string || "0:00",
-                },
-                buttonFormats: {
-                    music: audioFormats,
-                    video: videoFormats
-                }
-            };
-
-            console.log("=== API Response Data ===\n", JSON.stringify(responsePayload, null, 2));
-            return res.status(200).json(responsePayload);
+          console.log("=== API Response Data ===\n", JSON.stringify(responsePayload, null, 2));
+          return res.status(200).json(responsePayload);
 
         } catch (error) {
-            console.error("Parse error inside try block:", error);
-            return res.status(500).json({ error: "Failed to parse YouTube data packet structures." });
+          console.error("Parse error inside try block:", error);
+          return res.status(500).json({ error: "Failed to parse RapidAPI data packet structures." });
         }
+      });
     });
+    
+    rapidReq.on('error', function(err) {
+      console.error("Failed to fetch from RapidAPI:", err);
+      return res.status(500).json({ error: "Failed to connect to RapidAPI." });
+    });
+
+    rapidReq.end();
 });
 
 // ==========================================================
 // GET ROUTE: HIGH-SPEED SECURE DIRECT STREAM PIPELINE
 // ==========================================================
 app.get('/api/download', (req, res) => {
-    const { formatId, url, title, type } = req.query;
+    const { url, title, type } = req.query;
     
-    if (!formatId || !url || !type) {
-        return res.status(400).send("Security parameters 'formatId', 'url', and 'type' are required.");
-    }
-
-    if (!/^\d+$/.test(formatId)) {
-        return res.status(400).send("Security Violation: Invalid Format ID format pattern.");
-    }
-
-    if (!url.startsWith('https://www.youtube.com') && !url.startsWith('https://youtube.com') && !url.startsWith('https://youtu.be')) {
-        return res.status(403).send("Security Violation: Resource request blocked outside YouTube ecosystem.");
+    if (!url || !type) {
+        return res.status(400).send("Security parameters 'url', and 'type' are required.");
     }
 
     const safeTitle = (title || 'media_file').replace(/[/\\?%*:|"<>]/g, '_');
     
-    let ytDlpArgs = [];
-
     if (type === 'music') {
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.mp3"`);
-        
-        ytDlpArgs = [
-            '-f', formatId,
-            '-x',
-            '--audio-format', 'mp3',
-            '-o', '-',
-            '--no-playlist',
-            '--no-check-certificates',
-            '--force-ipv4',
-            '--extractor-args', "youtube:player_client=android,ios",
-            url
-        ];
     } else {
         res.setHeader('Content-Type', 'video/mp4');
         res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.mp4"`);
-        
-        ytDlpArgs = [
-            '-f', formatId,
-            '-o', '-',
-            '--no-playlist',
-            '--no-check-certificates',
-            '--force-ipv4',
-            '--extractor-args', "youtube:player_client=android,ios",
-            url
-        ];
     }
 
-    console.log(`[INSTANT STREAM] Spawning cloud pipeline for file: ${safeTitle}`);
-    const downloadProcess = spawn('./bin/yt-dlp', ytDlpArgs);
+    console.log(`[INSTANT STREAM] Proxying URL for file: ${safeTitle}`);
+    
+    const https = require('https');
+    const http = require('http');
+    
+    const client = url.startsWith('https') ? https : http;
 
-    downloadProcess.stdout.pipe(res);
+    client.get(url, (proxyRes) => {
+        if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
+             console.log("Redirecting to:", proxyRes.headers.location);
+             const redirectClient = proxyRes.headers.location.startsWith('https') ? https : http;
+             redirectClient.get(proxyRes.headers.location, (redirectRes) => {
+                 redirectRes.pipe(res);
+             }).on('error', (e) => {
+                 console.error("Proxy redirect error:", e);
+                 if (!res.headersSent) res.status(500).send("Proxy error");
+             });
+             return;
+        }
 
-    downloadProcess.stderr.on('data', (data) => {
-        console.log(`[Stream Log]: ${data}`);
-    });
-
-    downloadProcess.on('error', (err) => {
-        console.error("Downloader engine execution failed:", err);
+        proxyRes.pipe(res);
+    }).on('error', (err) => {
+        console.error("Proxy stream failed:", err);
         if (!res.headersSent) {
             res.status(500).send("Streaming pipeline crashed.");
         }
-    });
-
-    downloadProcess.on('close', (code) => {
-        console.log(`Streaming channel process closed with status code: ${code}`);
     });
 });
 

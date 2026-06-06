@@ -73,15 +73,15 @@ function App() {
     }
   };
 
-  const handleDownload = (formatId, downloadType) => {
+  const handleDownload = (formatId, downloadType, directUrl) => {
     // Pull the title directly from the videoData state object we saved during process
     const videoTitle = videoDetails?.title || 'video';
     
     // Create an automated window query link redirect passing variables cleanly
-    const directDownloadUrl = `https://vanilla-downloader.onrender.com/api/download?url=${encodeURIComponent(url)}&formatId=${formatId}&type=${downloadType}&title=${encodeURIComponent(videoTitle)}`;
+    const backendProxyUrl = `https://vanilla-downloader.onrender.com/api/download?url=${encodeURIComponent(directUrl)}&title=${encodeURIComponent(videoTitle)}&type=${downloadType}`;
     
     // Fire off native browser background tab trigger saving natively instantly!
-    window.open(directDownloadUrl, '_blank');
+    window.open(backendProxyUrl, '_blank');
   };
 
   const t = {
@@ -108,7 +108,7 @@ function App() {
       inputPlace: "PASTE VIDEO URL HERE",
       btn: "PROCESS",
       statusBox: "DOWNLOAD_STATUS",
-      modalMsg: "بدأ تحميل الفيديو!",
+      modalMsg: "بدأ تحميل الفيديو",
       musicHeader: "موسيقى",
       videoHeader: "فيديو",
       audioSub: "HIGH QUALITY AUDIO",

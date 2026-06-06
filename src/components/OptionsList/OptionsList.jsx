@@ -41,7 +41,7 @@ const OptionsList = ({ options, videoDetails, t, onDownload }) => {
             {music.map((item, itemIdx) => (
               <button
                 key={`${item.formatId}-${itemIdx}`}
-                onClick={() => onDownload(item.formatId, 'music')}
+                onClick={() => onDownload(item.formatId, 'music', item.url)}
                 className="neo-btn-green flex flex-col items-center justify-center py-4 border-[4px] shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
               >
                 <span className="text-2xl font-black font-inter">{item.quality}</span>
@@ -65,7 +65,7 @@ const OptionsList = ({ options, videoDetails, t, onDownload }) => {
             {video.map((item, itemIdx) => (
               <button
                 key={`${item.formatId}-${itemIdx}`}
-                onClick={() => onDownload(item.formatId, 'video')}
+                onClick={() => onDownload(item.formatId, 'video', item.url)}
                 className="neo-btn-green flex flex-col items-center justify-center py-4 border-[4px] shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
               >
                 <span className="text-2xl font-black font-inter">{item.quality.toUpperCase()}</span>
