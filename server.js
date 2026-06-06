@@ -152,7 +152,7 @@ app.post("/api/info", (req, res) => {
     "--dump-json",
     "--no-warnings",
     "--extractor-args",
-    "youtube:player_client=web",
+    "youtube:player_client=web,crawl_js=true",
     VideoUrl,
   ];
 
@@ -316,7 +316,7 @@ app.get("/api/download", (req, res) => {
       "--no-playlist",
       "--no-warnings",
       "--extractor-args",
-      "youtube:player_client=web",
+      "youtube:player_client=web,crawl_js=true",
       "-f",
       formatId,
       "--extract-audio",
@@ -331,7 +331,7 @@ app.get("/api/download", (req, res) => {
       "--no-playlist",
       "--no-warnings",
       "--extractor-args",
-      "youtube:player_client=web",
+      "youtube:player_client=web,crawl_js=true",
       "-f",
       formatId,
       "-o",
