@@ -165,7 +165,7 @@ app.get('/api/download', (req, res) => {
         return res.status(400).send("Security Violation: Invalid Format ID format pattern.");
     }
 
-    if (!url.startsWith('https://youtube.com') && !url.startsWith('https://youtu.be') && !url.startsWith('https://youtube.com')) {
+    if (!url.startsWith('https://www.youtube.com') && !url.startsWith('https://youtube.com') && !url.startsWith('https://youtu.be')) {
         return res.status(403).send("Security Violation: Resource request blocked outside YouTube ecosystem.");
     }
 
