@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from './components/Header/Header';
 import Input from './components/input/Input';
 import Button from './components/button/Button';
@@ -14,6 +14,29 @@ function App() {
   const [videoDetails, setVideoDetails] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
+  };
 
   const handleProcess = async () => {
     if (!url) {
@@ -75,7 +98,8 @@ function App() {
       audioSub: "HIGH QUALITY AUDIO",
       videoSub: "HD VIDEO STREAM",
       readyToRip: "READY FOR DOWNLOAD",
-      gotIt: "GOT IT!"
+      gotIt: "GOT IT!",
+      installBtn: "INSTALL APP"
     },
     ar: {
       heroLine1: "حمّل",
@@ -90,7 +114,8 @@ function App() {
       audioSub: "HIGH QUALITY AUDIO",
       videoSub: "HD VIDEO STREAM",
       readyToRip: "جاهز للتحميل",
-      gotIt: "فهمت!"
+      gotIt: "فهمت!",
+      installBtn: "تثبيت التطبيق"
     }
   };
 
@@ -101,6 +126,9 @@ function App() {
       <Header
         language={language}
         setLanguage={setLanguage}
+        installPrompt={installPrompt}
+        onInstallClick={handleInstallClick}
+        t={current}
       />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 md:py-20 relative">

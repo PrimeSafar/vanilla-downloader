@@ -8,15 +8,15 @@ const MoonIcon = ({ size = 24 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
 );
 
-const Header = ({ language, setLanguage }) => {
+const Header = ({ language, setLanguage, installPrompt, onInstallClick, t: appTranslations }) => {
   const t = {
     en: {
       title: "VanillaDownloader",
-      subtitle: "The Bold way to download",
+      subtitle: "Direct Downloads. Zero Hassle.",
     },
     ar: {
       title: "فانيلا-داونلودر",
-      subtitle: "الطريقة الجريئة للتحميل",
+      subtitle: "تحميل مباشر. بدون تعقيد.",
     }
   };
 
@@ -41,6 +41,17 @@ const Header = ({ language, setLanguage }) => {
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
+          {/* Install Button */}
+          {installPrompt && (
+            <button
+              onClick={onInstallClick}
+              className="neo-btn bg-neo-blue text-white hover:bg-neo-pink hover:-translate-y-1 !px-3 !py-2 md:!px-6 md:!py-2 font-inter"
+              aria-label="Install App"
+            >
+              <span className="font-black text-sm md:text-base font-inter">{appTranslations?.installBtn || 'INSTALL APP'}</span>
+            </button>
+          )}
+
           {/* Language toggle */}
           <button
             onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
