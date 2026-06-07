@@ -1,6 +1,6 @@
 import express from "express";
 import { spawn } from "child_process";
-import { existsSync, writeFileSync } from "fs";
+import { existsSync, writeFileSync, readFileSync } from "fs";
 import path from "path";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -17,9 +17,17 @@ if (process.env.YT_COOKIES) {
   try {
     writeFileSync("./cookies.txt", process.env.YT_COOKIES);
     console.log("[Setup] cookies.txt successfully written from environment variable.");
+    
+    // Debug: Check first few lines of cookies file
+    const cookieContent = readFileSync("./cookies.txt", "utf8");
+    const firstLines = cookieContent.split('\n').slice(0, 5).join('\n');
+    console.log("[Setup] Cookie preview (first 5 lines):\n", firstLines);
+    console.log("[Setup] Cookies file size:", cookieContent.length, "bytes");
   } catch (err) {
     console.error("[Setup] Failed to write cookies.txt:", err.message);
   }
+} else {
+  console.log("[Setup] No YT_COOKIES environment variable found!");
 }
 
 // Rate limiting: simple in-memory store for request tracking
@@ -77,6 +85,7 @@ const YTDLP =
   process.env.YTDLP_PATH || (existsSync("./yt-dlp") ? "./yt-dlp" : "yt-dlp");
 
 console.log(`[yt-dlp] Using binary: ${YTDLP}`);
+console.log(`[yt-dlp] Binary exists check: ${existsSync("./yt-dlp")}`);
 
 // Common yt-dlp arguments for YouTube (including Deno for JS challenges)
 const getCommonArgs = () => {
@@ -90,8 +99,12 @@ const getCommonArgs = () => {
   args.push("--remote-components", "ejs:npm");
   
   // Add cookies if they exist
-  if (existsSync("./cookies.txt")) {
-    args.push("--cookies", "./cookies.txt");
+  const cookiesPath = "./cookies.txt";
+  if (existsSync(cookiesPath)) {
+    console.log(`[yt-dlp] Using cookies from: ${cookiesPath}`);
+    args.push("--cookies", cookiesPath);
+  } else {
+    console.log("[yt-dlp] WARNING: No cookies file found!");
   }
   
   // Use android/mweb clients for better compatibility
@@ -103,6 +116,8 @@ const getCommonArgs = () => {
 // CORS: allow Render (production), and localhost (dev)
 const allowedOrigins = [
   "https://vanilla-downloader.onrender.com",
+  "https://vanilla-downloader.web.app",
+  "https://vanilla-downloader.firebaseapp.com",
   "http://localhost:5173",
 ];
 
@@ -112,6 +127,7 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
+        console.log(`[CORS] Blocked origin: ${origin}`);
         callback(new Error("Not allowed by CORS"));
       }
     },
@@ -140,6 +156,7 @@ app.get("/api/hello", (req, res) => {
 // HELPER: Run yt-dlp and collect stdout
 // ==========================================
 function runYtDlp(args, onData, onEnd, onError) {
+  console.log("[runYtDlp] Executing:", YTDLP, args.slice(0, 8).join(" "), "...");
   const proc = spawn(YTDLP, args);
   const chunks = [];
 
@@ -149,15 +166,21 @@ function runYtDlp(args, onData, onEnd, onError) {
   });
 
   proc.stderr.on("data", (data) => {
-    // yt-dlp writes progress to stderr — log it but don't treat as fatal
-    console.error("[yt-dlp stderr]", data.toString().trim());
+    const message = data.toString().trim();
+    console.error("[yt-dlp stderr]", message);
+    // If we get a cookie error, log it clearly
+    if (message.includes("cookies") || message.includes("Sign in")) {
+      console.error("[yt-dlp] COOKIE ERROR:", message);
+    }
   });
 
   proc.on("close", (code) => {
+    console.log(`[runYtDlp] Process exited with code ${code}`);
     if (onEnd) onEnd(code, Buffer.concat(chunks));
   });
 
   proc.on("error", (err) => {
+    console.error("[runYtDlp] spawn error:", err.message);
     if (onError) onError(err);
   });
 
@@ -190,12 +213,11 @@ app.post("/api/info", (req, res) => {
     args,
     null,
     (code, rawBuffer) => {
-      if (res.headersSent) return; // already responded via onError
+      if (res.headersSent) return;
       if (code !== 0) {
         console.error("[/api/info] yt-dlp exited with code", code);
         return res.status(500).json({
-          error:
-            "yt-dlp failed to fetch video info. Video may be private or unavailable.",
+          error: "yt-dlp failed to fetch video info. Video may be private or unavailable.",
         });
       }
 
@@ -257,16 +279,32 @@ app.post("/api/info", (req, res) => {
             (f) =>
               f.acodec &&
               f.acodec !== "none" &&
-              (f.vcodec === "none" || !f.vcodec),
+              (f.vcodec === "none" || !f.vcodec) &&
+              f.abr
           )
           .sort((a, b) => (b.abr || 0) - (a.abr || 0))
-          .slice(0, 3)
+          .slice(0, 5)
           .map((f) => ({
             formatId: f.format_id,
-            quality: f.abr ? `${Math.round(f.abr)}kbps` : "audio",
-            ext: f.ext || "mp3",
+            quality: f.abr ? `${Math.round(f.abr)}kbps` : "Audio",
+            ext: "mp3",
             filesize: f.filesize || f.filesize_approx || null,
           }));
+
+        // Also include bestaudio format as fallback
+        if (audioFormats.length === 0 && info.requested_formats) {
+          const bestAudio = info.requested_formats.find(f => f.acodec && f.acodec !== "none");
+          if (bestAudio) {
+            audioFormats.push({
+              formatId: bestAudio.format_id,
+              quality: bestAudio.abr ? `${Math.round(bestAudio.abr)}kbps` : "Best Audio",
+              ext: "mp3",
+              filesize: bestAudio.filesize || null,
+            });
+          }
+        }
+
+        console.log(`[/api/info] Found ${finalVideoFormats.length} video formats, ${audioFormats.length} audio formats`);
 
         const responsePayload = {
           message: "Data filtered successfully!",
@@ -333,27 +371,24 @@ app.get("/api/download", (req, res) => {
     `[/api/download] Streaming: "${safeTitle}" format=${formatId} type=${type}`,
   );
 
-  res.setHeader("Content-Type", contentType);
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${safeTitle}.${ext}"`,
-  );
-
   // Build args with common options
   const args = [...getCommonArgs()];
   
-  // Add format and output
-  args.push("-f", formatId, "-o", "-");
-  
-  // Add audio extraction if music
+  // For music: use bestaudio or the specific format ID
   if (type === "music") {
-    args.push("--extract-audio", "--audio-format", "mp3");
+    // If formatId is provided, use it; otherwise use bestaudio
+    args.push("-f", formatId || "bestaudio");
+    args.push("--extract-audio");
+    args.push("--audio-format", "mp3");
+    args.push("--audio-quality", "0"); // Best quality
+  } else {
+    args.push("-f", formatId);
   }
   
-  // Add URL at the end
+  args.push("-o", "-");
   args.push(url);
 
-  console.log("[/api/download] Running yt-dlp with args:", args.slice(0, 10).join(" ") + "...");
+  console.log("[/api/download] Args:", args.slice(0, -1).join(" "));
 
   const proc = spawn(YTDLP, args);
 
@@ -361,7 +396,9 @@ app.get("/api/download", (req, res) => {
   proc.stdout.pipe(res);
 
   proc.stderr.on("data", (data) => {
-    console.error("[yt-dlp download stderr]", data.toString().trim());
+    const message = data.toString().trim();
+    console.error("[yt-dlp download stderr]", message);
+    // Don't send error to client if we already started streaming
   });
 
   proc.on("error", (err) => {
@@ -392,7 +429,7 @@ app.use("/api", (req, res) => {
 });
 
 // Fallback: serve index.html for SPA routing
-app.get("/{*path}", (req, res) => {
+app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
