@@ -195,6 +195,7 @@ app.post("/api/info", (req, res) => {
 
   console.log("[/api/info] Fetching metadata for:", VideoUrl);
 
+  // IMPORTANT: NO -f flag here! Only --dump-json
   const args = [
     ...getCommonArgs(),
     "--dump-json",
