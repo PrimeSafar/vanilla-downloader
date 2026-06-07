@@ -116,7 +116,7 @@ app.get("/api/hello", (req, res) => {
 // Version endpoint
 app.get("/api/version", (req, res) => {
   res.json({ 
-    version: "4.3", 
+    version: "4.4", 
     engine: "untube",
     timestamp: Date.now()
   });
@@ -202,12 +202,12 @@ app.post("/api/info", async (req, res) => {
 });
 
 // ==========================================================
-// GET /api/download - Stream video or audio
+// GET /api/download - Stream video or audio using fetch
 // ==========================================================
 app.get("/api/download", async (req, res) => {
   const { url, formatId, title, type } = req.query;
 
-  console.log(`[/api/download] Request received: url=${url}, formatId=${formatId}, type=${type}`);
+  console.log(`[/api/download] Request: formatId=${formatId}, type=${type}`);
 
   if (!url || !formatId) {
     return res.status(400).json({ error: "Parameters 'url' and 'formatId' are required." });
@@ -222,59 +222,63 @@ app.get("/api/download", async (req, res) => {
   const ext = type === "music" ? "mp3" : "mp4";
   const contentType = type === "music" ? "audio/mpeg" : "video/mp4";
 
-  console.log(`[/api/download] Streaming: "${safeTitle}" videoId=${videoId} formatId=${formatId} type=${type}`);
+  console.log(`[/api/download] Streaming: "${safeTitle}"`);
+
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.${ext}"`);
 
   try {
     const cookieOption = existsSync("./cookies.txt") ? { cookies: "./cookies.txt" } : {};
     
-    // For audio, we need to use bestaudio format
-    let formatToUse = formatId;
-    if (type === "music") {
-      // Get video info to find the best audio format
-      const info = await untube.getVideoInfo(videoId, cookieOption);
+    // First get video info to get the actual stream URL
+    const info = await untube.getVideoInfo(videoId, cookieOption);
+    
+    // Find the requested format
+    let selectedFormat = info.formats.find(f => f.format_id === formatId);
+    
+    // If not found, try to find best matching format
+    if (!selectedFormat && type === 'music') {
       const audioFormats = untube.filterFormats(info.formats, 'audioonly');
-      const bestAudio = audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
-      if (bestAudio) {
-        formatToUse = bestAudio.format_id;
-        console.log(`[/api/download] Using best audio format: ${formatToUse} (${bestAudio.abr}kbps)`);
-      }
+      selectedFormat = audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
+      console.log(`[/api/download] Using best audio format: ${selectedFormat?.format_id}`);
+    } else if (!selectedFormat && type === 'video') {
+      const videoFormats = untube.filterFormats(info.formats, 'video');
+      selectedFormat = videoFormats.sort((a, b) => (b.height || 0) - (a.height || 0))[0];
+      console.log(`[/api/download] Using best video format: ${selectedFormat?.format_id}`);
     }
     
-    const stream = untube(videoId, {
-      format: formatToUse,
-      ...cookieOption
-    });
-
-    // Set headers before piping
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.${ext}"`);
+    if (!selectedFormat || !selectedFormat.url) {
+      throw new Error(`Format ${formatId} not found or has no URL`);
+    }
     
-    stream.on('info', (info, format) => {
-      console.log(`[/api/download] Download started: ${info.title}, Format: ${format.resolution || format.abr || 'audio'}`);
-    });
-
-    stream.on('progress', (progress) => {
-      console.log(`[/api/download] Progress: ${progress.percent || 0}%`);
-    });
-
-    stream.on('error', (err) => {
-      console.error("[/api/download] Stream error:", err.message);
-      if (!res.headersSent) {
-        res.status(500).json({ error: "Download failed: " + err.message });
+    console.log(`[/api/download] Downloading from URL: ${selectedFormat.url.substring(0, 100)}...`);
+    
+    // Fetch the stream from YouTube
+    const response = await fetch(selectedFormat.url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Range': 'bytes=0-'
       }
     });
-
-    stream.pipe(res);
-
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
+    }
+    
+    // Pipe the response to the client
+    response.body.pipe(res);
+    
     req.on("close", () => {
       console.log("[/api/download] Client disconnected.");
-      stream.destroy();
+      response.body.destroy();
     });
-
+    
   } catch (error) {
     console.error("[/api/download] Error:", error.message);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to start download: " + error.message });
+      res.status(500).json({ error: "Download failed: " + error.message });
     }
   }
 });
