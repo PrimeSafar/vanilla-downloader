@@ -13,16 +13,22 @@ const PORT = process.env.PORT || 3000;
 // ==========================================================
 // COOKIE INJECTOR: Creates cookies.txt from Render Env Var
 // ==========================================================
-if (process.env.YT_COOKIES) {
+// ==========================================================
+// COOKIE INJECTOR: Creates cookies.txt from Base64 Env Var
+// ==========================================================
+if (process.env.YT_COOKIES_BASE64) {
+  try {
+    const decodedCookies = Buffer.from(process.env.YT_COOKIES_BASE64, 'base64').toString('utf8');
+    writeFileSync("./cookies.txt", decodedCookies);
+    const lines = decodedCookies.split('\n').length;
+    console.log(`[Setup] cookies.txt written from BASE64. Size: ${decodedCookies.length} bytes, Lines: ${lines}`);
+  } catch (err) {
+    console.error("[Setup] Base64 decode failed:", err.message);
+  }
+} else if (process.env.YT_COOKIES) {
   try {
     writeFileSync("./cookies.txt", process.env.YT_COOKIES);
-    console.log("[Setup] cookies.txt successfully written from environment variable.");
-    
-    // Debug: Check first few lines of cookies file
-    const cookieContent = readFileSync("./cookies.txt", "utf8");
-    const firstLines = cookieContent.split('\n').slice(0, 5).join('\n');
-    console.log("[Setup] Cookie preview (first 5 lines):\n", firstLines);
-    console.log("[Setup] Cookies file size:", cookieContent.length, "bytes");
+    console.log("[Setup] cookies.txt written from YT_COOKIES");
   } catch (err) {
     console.error("[Setup] Failed to write cookies.txt:", err.message);
   }
