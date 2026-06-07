@@ -89,7 +89,7 @@ console.log(`[yt-dlp] Using binary: ${YTDLP}`);
 console.log(`[yt-dlp] Binary exists check: ${existsSync("./yt-dlp")}`);
 
 // ==========================================================
-// COMMON ARGS with PO Token Support
+// COMMON ARGS - NO FORMAT SELECTION HERE
 // ==========================================================
 const getCommonArgs = () => {
   const args = [
@@ -106,13 +106,10 @@ const getCommonArgs = () => {
   
   // Add cookies if they exist
   if (existsSync("./cookies.txt")) {
-    console.log("[yt-dlp] Using cookies from ./cookies.txt");
     args.push("--cookies", "./cookies.txt");
-  } else {
-    console.log("[yt-dlp] WARNING: No cookies file found!");
   }
   
-  // PO Token support - helps bypass bot detection
+  // PO Token support
   args.push("--extractor-args", "youtube:player_client=mweb,web,android");
   args.push("--extractor-args", "youtube:po_token=web");
   
@@ -133,7 +130,6 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.log(`[CORS] Blocked origin: ${origin}`);
         callback(new Error("Not allowed by CORS"));
       }
     },
@@ -155,12 +151,11 @@ app.use("/api", (req, res, next) => {
 
 // Health check
 app.get("/api/hello", (req, res) => {
-  res.json({ message: "VanillaDownloader backend is running with PO Token support!" });
+  res.json({ message: "VanillaDownloader backend is running!" });
 });
 
 // Helper: Run yt-dlp
 function runYtDlp(args, onData, onEnd, onError) {
-  console.log("[runYtDlp] Executing:", YTDLP, args.slice(0, 8).join(" "), "...");
   const proc = spawn(YTDLP, args);
   const chunks = [];
 
@@ -170,27 +165,23 @@ function runYtDlp(args, onData, onEnd, onError) {
   });
 
   proc.stderr.on("data", (data) => {
-    const message = data.toString().trim();
-    console.error("[yt-dlp stderr]", message);
-    if (message.includes("cookies") || message.includes("Sign in") || message.includes("bot")) {
-      console.error("[yt-dlp] AUTH ERROR:", message);
-    }
+    console.error("[yt-dlp stderr]", data.toString().trim());
   });
 
   proc.on("close", (code) => {
-    console.log(`[runYtDlp] Process exited with code ${code}`);
     if (onEnd) onEnd(code, Buffer.concat(chunks));
   });
 
   proc.on("error", (err) => {
-    console.error("[runYtDlp] spawn error:", err.message);
     if (onError) onError(err);
   });
 
   return proc;
 }
 
-// POST /api/info
+// ==========================================================
+// POST /api/info - Get video metadata (NO FORMAT SELECTION)
+// ==========================================================
 app.post("/api/info", (req, res) => {
   const VideoUrl = req.body ? req.body.url : null;
 
@@ -236,7 +227,7 @@ app.post("/api/info", (req, res) => {
 
         const allFormats = info.formats || [];
 
-        // Video formats
+        // Video formats (combined video+audio)
         const videoFormats = allFormats
           .filter(
             (f) =>
@@ -256,6 +247,7 @@ app.post("/api/info", (req, res) => {
             filesize: f.filesize || f.filesize_approx || null,
           }));
 
+        // Fallback video formats (video only)
         const fallbackVideo = allFormats
           .filter((f) => f.vcodec && f.vcodec !== "none" && f.height)
           .sort((a, b) => (b.height || 0) - (a.height || 0))
@@ -321,7 +313,9 @@ app.post("/api/info", (req, res) => {
   );
 });
 
-// GET /api/download
+// ==========================================================
+// GET /api/download - Stream video or audio (WITH FORMAT SELECTION)
+// ==========================================================
 app.get("/api/download", (req, res) => {
   const { url, formatId, title, type } = req.query;
 
@@ -357,8 +351,10 @@ app.get("/api/download", (req, res) => {
     `attachment; filename="${safeTitle}.${ext}"`,
   );
 
+  // Build args with common options
   const args = [...getCommonArgs()];
   
+  // Add format selection (ONLY HERE, NOT in getCommonArgs)
   if (type === "music") {
     args.push("-f", formatId || "bestaudio");
     args.push("--extract-audio");
@@ -371,9 +367,9 @@ app.get("/api/download", (req, res) => {
   args.push("-o", "-");
   args.push(url);
 
-  console.log("[/api/download] Args:", args.slice(0, -1).join(" "));
-
   const proc = spawn(YTDLP, args);
+
+  // Pipe yt-dlp stdout directly to HTTP response
   proc.stdout.pipe(res);
 
   proc.stderr.on("data", (data) => {
@@ -391,6 +387,7 @@ app.get("/api/download", (req, res) => {
     console.log(`[/api/download] yt-dlp exited with code ${code}`);
   });
 
+  // If client disconnects early, kill yt-dlp to save resources
   req.on("close", () => {
     console.log("[/api/download] Client disconnected, killing yt-dlp process.");
     proc.kill("SIGTERM");
@@ -406,12 +403,8 @@ app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint not found." });
 });
 
-// ==========================================================
-// FALLBACK ROUTE - FIXED for Express v5 compatibility
-// Using regex pattern instead of string pattern
-// ==========================================================
+// Fallback: serve index.html for SPA routing - FIXED for Express v5
 app.get(/.*/, (req, res) => {
-  // Don't interfere with API routes
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: "API endpoint not found." });
   }
@@ -419,5 +412,5 @@ app.get(/.*/, (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`VanillaDownloader backend running on port ${PORT} with PO Token support!`);
+  console.log(`VanillaDownloader backend running on port ${PORT}`);
 });
