@@ -34,3 +34,16 @@ www.youtube.com_cookies.txt
 .env
 .env.local
 .env.production
+
+# Cookies (authentication)
+cookies.txt
+*.cookies.txt
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Node
+node_modules/
+dist/

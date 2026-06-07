@@ -11,9 +11,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ==========================================================
-// COOKIE INJECTOR: Creates cookies.txt from Render Env Var
-// ==========================================================
-// ==========================================================
 // COOKIE INJECTOR: Creates cookies.txt from Base64 Env Var
 // ==========================================================
 if (process.env.YT_COOKIES_BASE64) {
@@ -33,13 +30,13 @@ if (process.env.YT_COOKIES_BASE64) {
     console.error("[Setup] Failed to write cookies.txt:", err.message);
   }
 } else {
-  console.log("[Setup] No YT_COOKIES environment variable found!");
+  console.log("[Setup] No cookies environment variable found!");
 }
 
-// Rate limiting: simple in-memory store for request tracking
+// Rate limiting
 const requestCounts = new Map();
-const RATE_LIMIT_WINDOW = 60000; // 1 minute in ms
-const RATE_LIMIT_MAX = 10; // max requests per window per IP
+const RATE_LIMIT_WINDOW = 60000;
+const RATE_LIMIT_MAX = 10;
 
 function checkRateLimit(ip) {
   const now = Date.now();
@@ -51,12 +48,11 @@ function checkRateLimit(ip) {
 
   const count = requestCounts.get(key);
   if (count >= RATE_LIMIT_MAX) {
-    return false; // Rate limited
+    return false;
   }
 
   requestCounts.set(key, count + 1);
 
-  // Cleanup old entries
   for (const [k] of requestCounts) {
     const [, window] = k.split(":");
     if (Math.floor(now / RATE_LIMIT_WINDOW) - parseInt(window) > 1) {
@@ -64,14 +60,14 @@ function checkRateLimit(ip) {
     }
   }
 
-  return true; // OK
+  return true;
 }
 
-// URL validation helper
+// URL validation
 const YOUTUBE_URL_REGEX =
   /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)[\w-]{11}/;
 const MAX_URL_LENGTH = 2048;
-const VALID_FORMAT_ID_REGEX = /^[\w,+]+$/; // Only alphanumeric, comma, plus
+const VALID_FORMAT_ID_REGEX = /^[\w,+]+$/;
 
 function validateYoutubeUrl(url) {
   if (!url || typeof url !== "string") return false;
@@ -85,19 +81,23 @@ function validateFormatId(formatId) {
   return VALID_FORMAT_ID_REGEX.test(formatId);
 }
 
-// Find yt-dlp binary: prefer ./yt-dlp (downloaded during build on Render),
-// fallback to system PATH for local development
+// Find yt-dlp binary
 const YTDLP =
   process.env.YTDLP_PATH || (existsSync("./yt-dlp") ? "./yt-dlp" : "yt-dlp");
 
 console.log(`[yt-dlp] Using binary: ${YTDLP}`);
 console.log(`[yt-dlp] Binary exists check: ${existsSync("./yt-dlp")}`);
 
-// Common yt-dlp arguments for YouTube (including Deno for JS challenges)
+// ==========================================================
+// COMMON ARGS with PO TOKEN PROVIDER SUPPORT
+// ==========================================================
 const getCommonArgs = () => {
   const args = [
     "--no-playlist",
     "--no-warnings",
+    "--sleep-interval", "3",
+    "--max-sleep-interval", "7",
+    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   ];
   
   // Add Deno for JavaScript challenge solving
@@ -105,21 +105,24 @@ const getCommonArgs = () => {
   args.push("--remote-components", "ejs:npm");
   
   // Add cookies if they exist
-  const cookiesPath = "./cookies.txt";
-  if (existsSync(cookiesPath)) {
-    console.log(`[yt-dlp] Using cookies from: ${cookiesPath}`);
-    args.push("--cookies", cookiesPath);
+  if (existsSync("./cookies.txt")) {
+    console.log("[yt-dlp] Using cookies from ./cookies.txt");
+    args.push("--cookies", "./cookies.txt");
   } else {
     console.log("[yt-dlp] WARNING: No cookies file found!");
   }
   
-  // Use android/mweb clients for better compatibility
-  args.push("--extractor-args", "youtube:player_client=android,mweb");
+  // ==========================================================
+  // PO TOKEN PROVIDER SUPPORT - Bypasses YouTube bot detection
+  // ==========================================================
+  args.push("--extractor-args", "youtube:player_client=web,mweb,android");
+  args.push("--extractor-args", "youtube:po_token=web+PROVIDER");
+  args.push("--extractor-args", "youtubepot-bgutilhttp:base_url=http://localhost:4416");
   
   return args;
 };
 
-// CORS: allow Render (production), and localhost (dev)
+// CORS configuration
 const allowedOrigins = [
   "https://vanilla-downloader.onrender.com",
   "https://vanilla-downloader.web.app",
@@ -142,7 +145,7 @@ app.use(
 
 app.use(express.json());
 
-// Rate limiting middleware for all API routes
+// Rate limiting middleware
 app.use("/api", (req, res, next) => {
   const ip = req.ip || req.connection.remoteAddress || "unknown";
   if (!checkRateLimit(ip)) {
@@ -153,14 +156,12 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
-// Basic health-check route
+// Health check
 app.get("/api/hello", (req, res) => {
-  res.json({ message: "VanillaDownloader backend is running!" });
+  res.json({ message: "VanillaDownloader backend is running with PO Token support!" });
 });
 
-// ==========================================
-// HELPER: Run yt-dlp and collect stdout
-// ==========================================
+// Helper: Run yt-dlp
 function runYtDlp(args, onData, onEnd, onError) {
   console.log("[runYtDlp] Executing:", YTDLP, args.slice(0, 8).join(" "), "...");
   const proc = spawn(YTDLP, args);
@@ -174,8 +175,8 @@ function runYtDlp(args, onData, onEnd, onError) {
   proc.stderr.on("data", (data) => {
     const message = data.toString().trim();
     console.error("[yt-dlp stderr]", message);
-    if (message.includes("cookies") || message.includes("Sign in")) {
-      console.error("[yt-dlp] COOKIE ERROR:", message);
+    if (message.includes("cookies") || message.includes("Sign in") || message.includes("bot")) {
+      console.error("[yt-dlp] AUTH ERROR:", message);
     }
   });
 
@@ -192,8 +193,7 @@ function runYtDlp(args, onData, onEnd, onError) {
   return proc;
 }
 
-// POST /api/info — Get video metadata + format list
-// ==========================================
+// POST /api/info
 app.post("/api/info", (req, res) => {
   const VideoUrl = req.body ? req.body.url : null;
 
@@ -239,6 +239,7 @@ app.post("/api/info", (req, res) => {
 
         const allFormats = info.formats || [];
 
+        // Video formats
         const videoFormats = allFormats
           .filter(
             (f) =>
@@ -272,6 +273,7 @@ app.post("/api/info", (req, res) => {
         const finalVideoFormats =
           videoFormats.length > 0 ? videoFormats : fallbackVideo;
 
+        // Audio formats
         const audioFormats = allFormats
           .filter(
             (f) =>
@@ -322,8 +324,7 @@ app.post("/api/info", (req, res) => {
   );
 });
 
-// GET /api/download — Stream video or audio directly to browser
-// ==========================================================
+// GET /api/download
 app.get("/api/download", (req, res) => {
   const { url, formatId, title, type } = req.query;
 
@@ -399,20 +400,20 @@ app.get("/api/download", (req, res) => {
   });
 });
 
-// Serve compiled static Vite frontend files
+// Serve static frontend files
 const __dirname = path.resolve();
 app.use(express.static(path.join(__dirname, "dist")));
 
-// Return 404 JSON for unmatched /api/ routes
+// 404 for API routes
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint not found." });
 });
 
-// Fallback: serve index.html for SPA routing (Express 5 compatible)
-app.use((req, res) => {
+// Fallback for SPA
+app.get("/*", (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
 app.listen(PORT, () => {
-  console.log(`VanillaDownloader backend running on port ${PORT}`);
+  console.log(`VanillaDownloader backend running on port ${PORT} with PO Token support!`);
 });
