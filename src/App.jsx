@@ -6,6 +6,9 @@ import OptionsList from './components/OptionsList/OptionsList';
 import Modal from './components/Modal/Modal';
 import Footer from './components/Footer/Footer';
 
+// Add this at the top - your Render backend URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://vanilla-downloader.onrender.com';
+
 function App() {
   const [url, setUrl] = useState('');
   const [status, setStatus] = useState('');
@@ -50,7 +53,8 @@ function App() {
     setStatus('CONNECTING TO SERVER.');
     
     try {
-      const response = await fetch('/api/info', {
+      // Use absolute URL instead of relative
+      const response = await fetch(`${API_BASE_URL}/api/info`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
@@ -77,9 +81,8 @@ function App() {
     // Pull the title from saved video details state
     const videoTitle = videoDetails?.title || 'video';
     
-    // Send the original YouTube URL + formatId to the backend.
-    // yt-dlp resolves the stream URL fresh on every request (avoids expiry issues).
-    const backendProxyUrl = `/api/download` +
+    // Use absolute URL for download
+    const backendProxyUrl = `${API_BASE_URL}/api/download` +
       `?url=${encodeURIComponent(url)}` +
       `&formatId=${encodeURIComponent(formatId)}` +
       `&title=${encodeURIComponent(videoTitle)}` +

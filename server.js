@@ -78,6 +78,28 @@ const YTDLP =
 
 console.log(`[yt-dlp] Using binary: ${YTDLP}`);
 
+// Common yt-dlp arguments for YouTube (including Deno for JS challenges)
+const getCommonArgs = () => {
+  const args = [
+    "--no-playlist",
+    "--no-warnings",
+  ];
+  
+  // Add Deno for JavaScript challenge solving
+  args.push("--js-runtime", "deno");
+  args.push("--remote-components", "ejs:npm");
+  
+  // Add cookies if they exist
+  if (existsSync("./cookies.txt")) {
+    args.push("--cookies", "./cookies.txt");
+  }
+  
+  // Use android/mweb clients for better compatibility
+  args.push("--extractor-args", "youtube:player_client=android,mweb");
+  
+  return args;
+};
+
 // CORS: allow Render (production), and localhost (dev)
 const allowedOrigins = [
   "https://vanilla-downloader.onrender.com",
@@ -159,13 +181,8 @@ app.post("/api/info", (req, res) => {
   console.log("[/api/info] Fetching metadata for:", VideoUrl);
 
   const args = [
-    "--no-playlist",
+    ...getCommonArgs(),
     "--dump-json",
-    "--no-warnings",
-    // Dynamically inject cookies if they exist
-    ...(existsSync("./cookies.txt") ? ["--cookies", "./cookies.txt"] : []),
-    "--extractor-args",
-    "youtube:player_client=android,mweb",
     VideoUrl,
   ];
 
@@ -322,41 +339,21 @@ app.get("/api/download", (req, res) => {
     `attachment; filename="${safeTitle}.${ext}"`,
   );
 
-  // yt-dlp args: pick exact format, output to stdout (-)
-  // If format is audio-only and user wants mp3, re-encode on the fly
-  let args;
+  // Build args with common options
+  const args = [...getCommonArgs()];
+  
+  // Add format and output
+  args.push("-f", formatId, "-o", "-");
+  
+  // Add audio extraction if music
   if (type === "music") {
-    args = [
-      "--no-playlist",
-      "--no-warnings",
-      // Dynamically inject cookies if they exist
-      ...(existsSync("./cookies.txt") ? ["--cookies", "./cookies.txt"] : []),
-      "--extractor-args",
-      "youtube:player_client=android,mweb",
-      "-f",
-      formatId,
-      "--extract-audio",
-      "--audio-format",
-      "mp3",
-      "-o",
-      "-", // output to stdout
-      url,
-    ];
-  } else {
-    args = [
-      "--no-playlist",
-      "--no-warnings",
-      // Dynamically inject cookies if they exist
-      ...(existsSync("./cookies.txt") ? ["--cookies", "./cookies.txt"] : []),
-      "--extractor-args",
-      "youtube:player_client=android,mweb",
-      "-f",
-      formatId,
-      "-o",
-      "-", // output to stdout
-      url,
-    ];
+    args.push("--extract-audio", "--audio-format", "mp3");
   }
+  
+  // Add URL at the end
+  args.push(url);
+
+  console.log("[/api/download] Running yt-dlp with args:", args.slice(0, 10).join(" ") + "...");
 
   const proc = spawn(YTDLP, args);
 
