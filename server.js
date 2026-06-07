@@ -1,6 +1,6 @@
 import express from "express";
 import { spawn } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, writeFileSync } from "fs";
 import path from "path";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -9,6 +9,18 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ==========================================================
+// COOKIE INJECTOR: Creates cookies.txt from Render Env Var
+// ==========================================================
+if (process.env.YT_COOKIES) {
+  try {
+    writeFileSync("./cookies.txt", process.env.YT_COOKIES);
+    console.log("[Setup] cookies.txt successfully written from environment variable.");
+  } catch (err) {
+    console.error("[Setup] Failed to write cookies.txt:", err.message);
+  }
+}
 
 // Rate limiting: simple in-memory store for request tracking
 const requestCounts = new Map();
@@ -151,8 +163,10 @@ app.post("/api/info", (req, res) => {
     "--no-playlist",
     "--dump-json",
     "--no-warnings",
+    // Dynamically inject cookies if they exist
+    ...(existsSync("./cookies.txt") ? ["--cookies", "./cookies.txt"] : []),
     "--extractor-args",
-    "youtube:player_client=web,crawl_js=true",
+    "youtube:player_client=android,mweb",
     VideoUrl,
   ];
 
@@ -315,8 +329,10 @@ app.get("/api/download", (req, res) => {
     args = [
       "--no-playlist",
       "--no-warnings",
+      // Dynamically inject cookies if they exist
+      ...(existsSync("./cookies.txt") ? ["--cookies", "./cookies.txt"] : []),
       "--extractor-args",
-      "youtube:player_client=web,crawl_js=true",
+      "youtube:player_client=android,mweb",
       "-f",
       formatId,
       "--extract-audio",
@@ -330,8 +346,10 @@ app.get("/api/download", (req, res) => {
     args = [
       "--no-playlist",
       "--no-warnings",
+      // Dynamically inject cookies if they exist
+      ...(existsSync("./cookies.txt") ? ["--cookies", "./cookies.txt"] : []),
       "--extractor-args",
-      "youtube:player_client=web,crawl_js=true",
+      "youtube:player_client=android,mweb",
       "-f",
       formatId,
       "-o",
