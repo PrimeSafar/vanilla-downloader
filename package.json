@@ -9,7 +9,7 @@
   "start": "node start-all.js",
   "pot-provider": "node pot-provider.js",
   "render-build": "curl -fsSL https://deno.land/install.sh | sh && export DENO_INSTALL=\"/opt/render/.deno\" && export PATH=\"$DENO_INSTALL/bin:$PATH\" && npm install && npm run build && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ./yt-dlp && chmod +x ./yt-dlp"
-},,
+},
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",
     "cors": "^2.8.6",
