@@ -1,9 +1,9 @@
 import express from "express";
-import { spawn } from "child_process";
 import { existsSync, writeFileSync } from "fs";
 import path from "path";
 import cors from "cors";
 import dotenv from "dotenv";
+import untube from 'untube';
 
 dotenv.config();
 
@@ -75,10 +75,6 @@ function validateYoutubeUrl(url) {
   return YOUTUBE_URL_REGEX.test(url);
 }
 
-// Find yt-dlp binary
-const YTDLP = existsSync("./yt-dlp") ? "./yt-dlp" : "yt-dlp";
-console.log(`[yt-dlp] Using binary: ${YTDLP}`);
-
 // CORS configuration
 const allowedOrigins = [
   "https://vanilla-downloader.onrender.com",
@@ -114,20 +110,20 @@ app.use("/api", (req, res, next) => {
 
 // Health check
 app.get("/api/hello", (req, res) => {
-  res.json({ message: "VanillaDownloader backend is running!" });
+  res.json({ message: "VanillaDownloader backend is running with untube!" });
 });
 
 // Version endpoint
 app.get("/api/version", (req, res) => {
   res.json({ 
-    version: "5.0", 
-    engine: "yt-dlp",
+    version: "5.1", 
+    engine: "untube",
     timestamp: Date.now()
   });
 });
 
 // ==========================================================
-// POST /api/info - Get video metadata using yt-dlp
+// POST /api/info - Get video metadata using untube
 // ==========================================================
 app.post("/api/info", async (req, res) => {
   const videoUrl = req.body ? req.body.url : null;
@@ -140,152 +136,151 @@ app.post("/api/info", async (req, res) => {
     return res.status(400).json({ error: "Invalid YouTube URL" });
   }
 
-  console.log("[/api/info] Fetching metadata for:", videoUrl);
+  const videoId = extractVideoId(videoUrl);
+  if (!videoId) {
+    return res.status(400).json({ error: "Could not extract video ID" });
+  }
 
-  const args = [
-    "--no-playlist",
-    "--dump-json",
-    "--no-warnings",
-    ...(existsSync("./cookies.txt") ? ["--cookies", "./cookies.txt"] : []),
-    "--extractor-args",
-    "youtube:player_client=android,web",
-    videoUrl,
-  ];
+  console.log("[/api/info] Fetching metadata for:", videoId);
 
-  const proc = spawn(YTDLP, args);
-  let stdout = "";
-  let stderr = "";
+  try {
+    const info = await untube.getVideoInfo(videoId, {
+      cookies: existsSync("./cookies.txt") ? "./cookies.txt" : undefined
+    });
 
-  proc.stdout.on("data", (data) => { stdout += data.toString(); });
-  proc.stderr.on("data", (data) => { stderr += data.toString(); });
+    const durationStr = `${Math.floor(info.duration / 60)}:${(info.duration % 60).toString().padStart(2, "0")}`;
 
-  proc.on("close", (code) => {
-    if (code !== 0) {
-      console.error("[/api/info] yt-dlp error:", stderr);
-      return res.status(500).json({
-        error: "Failed to fetch video info. Video may be private or unavailable."
-      });
-    }
+    const videoFormats = untube.filterFormats(info.formats, 'video')
+      .filter(f => f.resolution && f.resolution !== 'audio only')
+      .sort((a, b) => {
+        const heightA = parseInt(a.resolution) || 0;
+        const heightB = parseInt(b.resolution) || 0;
+        return heightB - heightA;
+      })
+      .slice(0, 5)
+      .map(f => ({
+        formatId: f.format_id,
+        quality: f.resolution || f.quality_label || 'HD',
+        ext: f.ext,
+        filesize: f.filesize || null
+      }));
 
-    try {
-      const info = JSON.parse(stdout);
-      const durationStr = `${Math.floor(info.duration / 60)}:${(info.duration % 60).toString().padStart(2, "0")}`;
-      
-      const allFormats = info.formats || [];
-      
-      // Video formats
-      const videoFormats = allFormats
-        .filter(f => f.vcodec && f.vcodec !== "none" && f.height)
-        .sort((a, b) => (b.height || 0) - (a.height || 0))
-        .slice(0, 5)
-        .map(f => ({
-          formatId: f.format_id,
-          quality: `${f.height}p`,
-          ext: f.ext,
-          filesize: f.filesize || null
-        }));
-      
-      // Audio formats
-      const audioFormats = allFormats
-        .filter(f => f.acodec && f.acodec !== "none" && (!f.vcodec || f.vcodec === "none"))
-        .sort((a, b) => (b.abr || 0) - (a.abr || 0))
-        .slice(0, 3)
-        .map(f => ({
-          formatId: f.format_id,
-          quality: f.abr ? `${Math.round(f.abr)}kbps` : "Audio",
-          ext: "mp3",
-          filesize: f.filesize || null
-        }));
-      
-      const responsePayload = {
-        message: "Data filtered successfully!",
-        videoDetails: {
-          title: info.title || "Unknown Video",
-          thumbnail: info.thumbnail,
-          duration: durationStr,
-        },
-        buttonFormats: {
-          video: videoFormats,
-          music: audioFormats,
-        },
-      };
-      
-      console.log("[/api/info] Success:", info.title);
-      return res.status(200).json(responsePayload);
-      
-    } catch (err) {
-      console.error("[/api/info] Parse error:", err.message);
-      return res.status(500).json({ error: "Failed to parse video metadata." });
-    }
-  });
-  
-  proc.on("error", (err) => {
-    console.error("[/api/info] spawn error:", err.message);
-    return res.status(500).json({ error: "yt-dlp binary not found." });
-  });
+    const audioFormats = untube.filterFormats(info.formats, 'audioonly')
+      .sort((a, b) => (b.abr || 0) - (a.abr || 0))
+      .slice(0, 3)
+      .map(f => ({
+        formatId: f.format_id,
+        quality: f.abr ? `${Math.round(f.abr)}kbps` : 'Audio',
+        ext: 'mp3',
+        filesize: f.filesize || null
+      }));
+
+    console.log(`[/api/info] Found ${videoFormats.length} video formats, ${audioFormats.length} audio formats`);
+
+    const responsePayload = {
+      message: "Data filtered successfully!",
+      videoDetails: {
+        title: info.title || "Unknown Video",
+        thumbnail: info.thumbnail,
+        duration: durationStr,
+      },
+      buttonFormats: {
+        video: videoFormats,
+        music: audioFormats,
+      },
+    };
+
+    console.log("[/api/info] Success:", info.title);
+    return res.status(200).json(responsePayload);
+
+  } catch (error) {
+    console.error("[/api/info] Error:", error.message);
+    return res.status(500).json({
+      error: "Failed to fetch video info. The video may be private, age-restricted, or unavailable."
+    });
+  }
 });
 
 // ==========================================================
-// GET /api/download - Stream using yt-dlp
+// GET /api/download - Stream using untube with working approach
 // ==========================================================
-app.get("/api/download", (req, res) => {
+app.get("/api/download", async (req, res) => {
   const { url, formatId, title, type } = req.query;
+
+  console.log(`[/api/download] Request: formatId=${formatId}, type=${type}`);
 
   if (!url || !formatId) {
     return res.status(400).json({ error: "Parameters 'url' and 'formatId' are required." });
+  }
+
+  const videoId = extractVideoId(url);
+  if (!videoId) {
+    return res.status(400).json({ error: "Invalid YouTube URL" });
   }
 
   const safeTitle = (title || "media_file").replace(/[/\\?%*:|"<>]/g, "_");
   const ext = type === "music" ? "mp3" : "mp4";
   const contentType = type === "music" ? "audio/mpeg" : "video/mp4";
 
-  console.log(`[/api/download] Streaming: "${safeTitle}" format=${formatId} type=${type}`);
+  console.log(`[/api/download] Streaming: "${safeTitle}"`);
 
-  res.setHeader("Content-Type", contentType);
-  res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.${ext}"`);
-
-  let args;
-  if (type === "music") {
-    args = [
-      "--no-playlist",
-      "--no-warnings",
-      ...(existsSync("./cookies.txt") ? ["--cookies", "./cookies.txt"] : []),
-      "-f", formatId,
-      "--extract-audio",
-      "--audio-format", "mp3",
-      "--audio-quality", "0",
-      "-o", "-",
-      url,
-    ];
-  } else {
-    args = [
-      "--no-playlist",
-      "--no-warnings",
-      ...(existsSync("./cookies.txt") ? ["--cookies", "./cookies.txt"] : []),
-      "-f", formatId,
-      "-o", "-",
-      url,
-    ];
-  }
-
-  const proc = spawn(YTDLP, args);
-  proc.stdout.pipe(res);
-  
-  proc.stderr.on("data", (data) => {
-    console.error("[yt-dlp stderr]", data.toString().trim());
-  });
-  
-  proc.on("error", (err) => {
-    console.error("[/api/download] error:", err.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: "Download failed" });
+  try {
+    const cookieOption = existsSync("./cookies.txt") ? { cookies: "./cookies.txt" } : {};
+    
+    // For music, use the best audio format
+    let formatToUse = formatId;
+    if (type === "music") {
+      const info = await untube.getVideoInfo(videoId, cookieOption);
+      const audioFormats = untube.filterFormats(info.formats, 'audioonly');
+      const bestAudio = audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
+      if (bestAudio) {
+        formatToUse = bestAudio.format_id;
+        console.log(`[/api/download] Using audio format: ${formatToUse}`);
+      }
     }
-  });
-  
-  req.on("close", () => {
-    console.log("[/api/download] Client disconnected");
-    proc.kill();
-  });
+    
+    // Create the stream
+    const stream = untube(videoId, {
+      format: formatToUse,
+      ...cookieOption
+    });
+
+    // Set headers
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.${ext}"`);
+    
+    // Handle stream events
+    stream.on('info', (info, format) => {
+      console.log(`[/api/download] Downloading: ${info.title}`);
+    });
+    
+    stream.on('progress', (progress) => {
+      if (progress.percent) {
+        console.log(`[/api/download] Progress: ${Math.round(progress.percent)}%`);
+      }
+    });
+    
+    stream.on('error', (err) => {
+      console.error("[/api/download] Stream error:", err.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Download failed: " + err.message });
+      }
+    });
+    
+    // Pipe the stream to response
+    stream.pipe(res);
+    
+    req.on("close", () => {
+      console.log("[/api/download] Client disconnected");
+      stream.destroy();
+    });
+    
+  } catch (error) {
+    console.error("[/api/download] Error:", error.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to start download: " + error.message });
+    }
+  }
 });
 
 // Serve compiled static Vite frontend files
@@ -306,5 +301,5 @@ app.get(/.*/, (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`VanillaDownloader backend running on port ${PORT}`);
+  console.log(`VanillaDownloader backend running on port ${PORT} with untube!`);
 });
