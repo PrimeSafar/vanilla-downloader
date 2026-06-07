@@ -173,6 +173,7 @@ app.post("/api/info", (req, res) => {
     args,
     null,
     (code, rawBuffer) => {
+      if (res.headersSent) return; // already responded via onError
       if (code !== 0) {
         console.error("[/api/info] yt-dlp exited with code", code);
         return res.status(500).json({
@@ -369,7 +370,7 @@ app.get("/api/download", (req, res) => {
   proc.on("error", (err) => {
     console.error("[/api/download] spawn error:", err.message);
     if (!res.headersSent) {
-      res.status(500).send("yt-dlp binary not found.");
+      res.status(500).json({ error: "yt-dlp binary not found on server." });
     }
   });
 
