@@ -402,8 +402,8 @@ app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint not found." });
 });
 
-// Fallback: serve index.html for SPA routing - FIXED LINE
-app.get("*", (req, res) => {
+// Fallback: serve index.html for SPA routing - FIXED
+app.get("/*", (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
