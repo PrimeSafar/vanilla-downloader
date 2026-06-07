@@ -3,7 +3,7 @@ import { existsSync, writeFileSync } from "fs";
 import path from "path";
 import cors from "cors";
 import dotenv from "dotenv";
-import untube from 'untube';
+import { youtubeDl } from "youtube-dl-exec";
 
 dotenv.config();
 
@@ -110,20 +110,20 @@ app.use("/api", (req, res, next) => {
 
 // Health check
 app.get("/api/hello", (req, res) => {
-  res.json({ message: "VanillaDownloader backend is running with untube!" });
+  res.json({ message: "VanillaDownloader backend is running with youtube-dl-exec!" });
 });
 
 // Version endpoint
 app.get("/api/version", (req, res) => {
   res.json({ 
-    version: "5.1", 
-    engine: "untube",
+    version: "7.0", 
+    engine: "youtube-dl-exec",
     timestamp: Date.now()
   });
 });
 
 // ==========================================================
-// POST /api/info - Get video metadata using untube
+// POST /api/info - Get video metadata
 // ==========================================================
 app.post("/api/info", async (req, res) => {
   const videoUrl = req.body ? req.body.url : null;
@@ -136,47 +136,50 @@ app.post("/api/info", async (req, res) => {
     return res.status(400).json({ error: "Invalid YouTube URL" });
   }
 
-  const videoId = extractVideoId(videoUrl);
-  if (!videoId) {
-    return res.status(400).json({ error: "Could not extract video ID" });
-  }
-
-  console.log("[/api/info] Fetching metadata for:", videoId);
+  console.log("[/api/info] Fetching metadata for:", videoUrl);
 
   try {
-    const info = await untube.getVideoInfo(videoId, {
-      cookies: existsSync("./cookies.txt") ? "./cookies.txt" : undefined
+    const cookieOption = existsSync("./cookies.txt") ? { cookies: "./cookies.txt" } : {};
+    
+    const info = await youtubeDl(videoUrl, {
+      dumpSingleJson: true,
+      noPlaylist: true,
+      noWarnings: true,
+      addHeader: [
+        'referer:https://www.youtube.com/',
+        'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      ],
+      ...cookieOption
     });
 
     const durationStr = `${Math.floor(info.duration / 60)}:${(info.duration % 60).toString().padStart(2, "0")}`;
-
-    const videoFormats = untube.filterFormats(info.formats, 'video')
-      .filter(f => f.resolution && f.resolution !== 'audio only')
-      .sort((a, b) => {
-        const heightA = parseInt(a.resolution) || 0;
-        const heightB = parseInt(b.resolution) || 0;
-        return heightB - heightA;
-      })
+    
+    const allFormats = info.formats || [];
+    
+    // Video formats
+    const videoFormats = allFormats
+      .filter(f => f.vcodec && f.vcodec !== "none" && f.height)
+      .sort((a, b) => (b.height || 0) - (a.height || 0))
       .slice(0, 5)
       .map(f => ({
         formatId: f.format_id,
-        quality: f.resolution || f.quality_label || 'HD',
+        quality: `${f.height}p`,
         ext: f.ext,
         filesize: f.filesize || null
       }));
-
-    const audioFormats = untube.filterFormats(info.formats, 'audioonly')
+    
+    // Audio formats
+    const audioFormats = allFormats
+      .filter(f => f.acodec && f.acodec !== "none" && (!f.vcodec || f.vcodec === "none"))
       .sort((a, b) => (b.abr || 0) - (a.abr || 0))
       .slice(0, 3)
       .map(f => ({
         formatId: f.format_id,
-        quality: f.abr ? `${Math.round(f.abr)}kbps` : 'Audio',
-        ext: 'mp3',
+        quality: f.abr ? `${Math.round(f.abr)}kbps` : "Audio",
+        ext: "mp3",
         filesize: f.filesize || null
       }));
-
-    console.log(`[/api/info] Found ${videoFormats.length} video formats, ${audioFormats.length} audio formats`);
-
+    
     const responsePayload = {
       message: "Data filtered successfully!",
       videoDetails: {
@@ -189,10 +192,10 @@ app.post("/api/info", async (req, res) => {
         music: audioFormats,
       },
     };
-
+    
     console.log("[/api/info] Success:", info.title);
     return res.status(200).json(responsePayload);
-
+    
   } catch (error) {
     console.error("[/api/info] Error:", error.message);
     return res.status(500).json({
@@ -202,7 +205,7 @@ app.post("/api/info", async (req, res) => {
 });
 
 // ==========================================================
-// GET /api/download - Stream using untube with working approach
+// GET /api/download - Stream using youtube-dl-exec
 // ==========================================================
 app.get("/api/download", async (req, res) => {
   const { url, formatId, title, type } = req.query;
@@ -213,66 +216,82 @@ app.get("/api/download", async (req, res) => {
     return res.status(400).json({ error: "Parameters 'url' and 'formatId' are required." });
   }
 
-  const videoId = extractVideoId(url);
-  if (!videoId) {
-    return res.status(400).json({ error: "Invalid YouTube URL" });
-  }
-
   const safeTitle = (title || "media_file").replace(/[/\\?%*:|"<>]/g, "_");
   const ext = type === "music" ? "mp3" : "mp4";
   const contentType = type === "music" ? "audio/mpeg" : "video/mp4";
 
   console.log(`[/api/download] Streaming: "${safeTitle}"`);
 
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.${ext}"`);
+
   try {
     const cookieOption = existsSync("./cookies.txt") ? { cookies: "./cookies.txt" } : {};
     
-    // For music, use the best audio format
-    let formatToUse = formatId;
+    let args;
     if (type === "music") {
-      const info = await untube.getVideoInfo(videoId, cookieOption);
-      const audioFormats = untube.filterFormats(info.formats, 'audioonly');
-      const bestAudio = audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
-      if (bestAudio) {
-        formatToUse = bestAudio.format_id;
-        console.log(`[/api/download] Using audio format: ${formatToUse}`);
+      args = {
+        extractAudio: true,
+        audioFormat: "mp3",
+        audioQuality: 0,
+        output: "-",
+        noPlaylist: true,
+        noWarnings: true,
+        addHeader: [
+          'referer:https://www.youtube.com/',
+          'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        ],
+        ...cookieOption
+      };
+      
+      // Use formatId or bestaudio
+      if (formatId && formatId !== 'bestaudio') {
+        args.format = formatId;
+      } else {
+        args.format = 'bestaudio';
       }
+      
+    } else {
+      args = {
+        format: formatId,
+        output: "-",
+        noPlaylist: true,
+        noWarnings: true,
+        addHeader: [
+          'referer:https://www.youtube.com/',
+          'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        ],
+        ...cookieOption
+      };
     }
     
-    // Create the stream
-    const stream = untube(videoId, {
-      format: formatToUse,
-      ...cookieOption
-    });
-
-    // Set headers
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.${ext}"`);
+    console.log("[/api/download] Starting youtube-dl-exec...");
     
-    // Handle stream events
-    stream.on('info', (info, format) => {
-      console.log(`[/api/download] Downloading: ${info.title}`);
+    const subprocess = youtubeDl.exec(url, args);
+    
+    subprocess.stdout.on("data", (chunk) => {
+      res.write(chunk);
     });
     
-    stream.on('progress', (progress) => {
-      if (progress.percent) {
-        console.log(`[/api/download] Progress: ${Math.round(progress.percent)}%`);
-      }
+    subprocess.stderr.on("data", (data) => {
+      console.log("[yt-dlp]", data.toString().trim());
     });
     
-    stream.on('error', (err) => {
-      console.error("[/api/download] Stream error:", err.message);
+    subprocess.on("error", (err) => {
+      console.error("[/api/download] Process error:", err.message);
       if (!res.headersSent) {
         res.status(500).json({ error: "Download failed: " + err.message });
       }
     });
     
-    // Pipe the stream to response
-    stream.pipe(res);
+    subprocess.on("close", (code) => {
+      console.log(`[/api/download] Process closed with code ${code}`);
+      res.end();
+    });
     
     req.on("close", () => {
-      console.log("[/api/download] Client disconnected");
-      stream.destroy();
+      console.log("[/api/download] Client disconnected, killing process");
+      subprocess.kill();
     });
     
   } catch (error) {
@@ -301,5 +320,5 @@ app.get(/.*/, (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`VanillaDownloader backend running on port ${PORT} with untube!`);
+  console.log(`VanillaDownloader backend running on port ${PORT} with youtube-dl-exec!`);
 });
