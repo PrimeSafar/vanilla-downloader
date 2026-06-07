@@ -78,10 +78,9 @@ const YTDLP =
 
 console.log(`[yt-dlp] Using binary: ${YTDLP}`);
 
-// Secure CORS to only allow your Firebase app and localhost
+// CORS: allow Render (production), and localhost (dev)
 const allowedOrigins = [
-  "https://vanilla-downloader.web.app",
-  "https://vanilla-downloader.firebaseapp.com",
+  "https://vanilla-downloader.onrender.com",
   "http://localhost:5173",
 ];
 

@@ -50,7 +50,7 @@ function App() {
     setStatus('CONNECTING TO SERVER.');
     
     try {
-      const response = await fetch('https://vanilla-downloader.onrender.com/api/info', {
+      const response = await fetch('/api/info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
@@ -79,7 +79,7 @@ function App() {
     
     // Send the original YouTube URL + formatId to the backend.
     // yt-dlp resolves the stream URL fresh on every request (avoids expiry issues).
-    const backendProxyUrl = `https://vanilla-downloader.onrender.com/api/download` +
+    const backendProxyUrl = `/api/download` +
       `?url=${encodeURIComponent(url)}` +
       `&formatId=${encodeURIComponent(formatId)}` +
       `&title=${encodeURIComponent(videoTitle)}` +
