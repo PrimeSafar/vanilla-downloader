@@ -168,7 +168,6 @@ function runYtDlp(args, onData, onEnd, onError) {
   proc.stderr.on("data", (data) => {
     const message = data.toString().trim();
     console.error("[yt-dlp stderr]", message);
-    // If we get a cookie error, log it clearly
     if (message.includes("cookies") || message.includes("Sign in")) {
       console.error("[yt-dlp] COOKIE ERROR:", message);
     }
@@ -196,7 +195,6 @@ app.post("/api/info", (req, res) => {
     return res.status(400).json({ error: "URL is required!" });
   }
 
-  // Validate YouTube URL with comprehensive checks
   if (!validateYoutubeUrl(VideoUrl)) {
     return res.status(400).json({ error: "Invalid YouTube URL" });
   }
@@ -224,21 +222,17 @@ app.post("/api/info", (req, res) => {
       try {
         const info = JSON.parse(rawBuffer.toString());
 
-        // Duration string MM:SS
         const dur = info.duration || 0;
         const durationStr = `${Math.floor(dur / 60)}:${(dur % 60).toString().padStart(2, "0")}`;
 
-        // Best thumbnail
         const thumbnail =
           info.thumbnail ||
           (info.thumbnails && info.thumbnails.length > 0
             ? info.thumbnails[info.thumbnails.length - 1].url
             : "");
 
-        // ---- Video formats (have both video and audio OR just video) ----
         const allFormats = info.formats || [];
 
-        // Combined video+audio formats (easy download, no merge needed)
         const videoFormats = allFormats
           .filter(
             (f) =>
@@ -258,7 +252,6 @@ app.post("/api/info", (req, res) => {
             filesize: f.filesize || f.filesize_approx || null,
           }));
 
-        // If no combined formats, fall back to best video-only formats
         const fallbackVideo = allFormats
           .filter((f) => f.vcodec && f.vcodec !== "none" && f.height)
           .sort((a, b) => (b.height || 0) - (a.height || 0))
@@ -273,7 +266,6 @@ app.post("/api/info", (req, res) => {
         const finalVideoFormats =
           videoFormats.length > 0 ? videoFormats : fallbackVideo;
 
-        // ---- Audio-only formats ----
         const audioFormats = allFormats
           .filter(
             (f) =>
@@ -290,19 +282,6 @@ app.post("/api/info", (req, res) => {
             ext: "mp3",
             filesize: f.filesize || f.filesize_approx || null,
           }));
-
-        // Also include bestaudio format as fallback
-        if (audioFormats.length === 0 && info.requested_formats) {
-          const bestAudio = info.requested_formats.find(f => f.acodec && f.acodec !== "none");
-          if (bestAudio) {
-            audioFormats.push({
-              formatId: bestAudio.format_id,
-              quality: bestAudio.abr ? `${Math.round(bestAudio.abr)}kbps` : "Best Audio",
-              ext: "mp3",
-              filesize: bestAudio.filesize || null,
-            });
-          }
-        }
 
         console.log(`[/api/info] Found ${finalVideoFormats.length} video formats, ${audioFormats.length} audio formats`);
 
@@ -338,7 +317,6 @@ app.post("/api/info", (req, res) => {
 });
 
 // GET /api/download — Stream video or audio directly to browser
-// Accepts: ?url=YOUTUBE_URL&formatId=FORMAT_ID&title=TITLE&type=video|music
 // ==========================================================
 app.get("/api/download", (req, res) => {
   const { url, formatId, title, type } = req.query;
@@ -349,7 +327,6 @@ app.get("/api/download", (req, res) => {
       .json({ error: "Parameters 'url' and 'formatId' are required." });
   }
 
-  // Validate inputs
   if (!validateYoutubeUrl(url)) {
     return res.status(400).json({ error: "Invalid YouTube URL" });
   }
@@ -358,7 +335,6 @@ app.get("/api/download", (req, res) => {
     return res.status(400).json({ error: "Invalid format ID" });
   }
 
-  // Validate type parameter
   if (type && !["video", "music"].includes(type)) {
     return res.status(400).json({ error: "Invalid type. Must be 'video' or 'music'." });
   }
@@ -371,16 +347,19 @@ app.get("/api/download", (req, res) => {
     `[/api/download] Streaming: "${safeTitle}" format=${formatId} type=${type}`,
   );
 
-  // Build args with common options
+  res.setHeader("Content-Type", contentType);
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${safeTitle}.${ext}"`,
+  );
+
   const args = [...getCommonArgs()];
   
-  // For music: use bestaudio or the specific format ID
   if (type === "music") {
-    // If formatId is provided, use it; otherwise use bestaudio
     args.push("-f", formatId || "bestaudio");
     args.push("--extract-audio");
     args.push("--audio-format", "mp3");
-    args.push("--audio-quality", "0"); // Best quality
+    args.push("--audio-quality", "0");
   } else {
     args.push("-f", formatId);
   }
@@ -391,14 +370,10 @@ app.get("/api/download", (req, res) => {
   console.log("[/api/download] Args:", args.slice(0, -1).join(" "));
 
   const proc = spawn(YTDLP, args);
-
-  // Pipe yt-dlp stdout directly to HTTP response
   proc.stdout.pipe(res);
 
   proc.stderr.on("data", (data) => {
-    const message = data.toString().trim();
-    console.error("[yt-dlp download stderr]", message);
-    // Don't send error to client if we already started streaming
+    console.error("[yt-dlp download stderr]", data.toString().trim());
   });
 
   proc.on("error", (err) => {
@@ -412,7 +387,6 @@ app.get("/api/download", (req, res) => {
     console.log(`[/api/download] yt-dlp exited with code ${code}`);
   });
 
-  // If client disconnects early, kill yt-dlp to save resources
   req.on("close", () => {
     console.log("[/api/download] Client disconnected, killing yt-dlp process.");
     proc.kill("SIGTERM");
@@ -428,7 +402,7 @@ app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint not found." });
 });
 
-// Fallback: serve index.html for SPA routing
+// Fallback: serve index.html for SPA routing - FIXED LINE
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
