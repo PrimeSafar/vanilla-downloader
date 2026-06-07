@@ -154,6 +154,15 @@ app.get("/api/hello", (req, res) => {
   res.json({ message: "VanillaDownloader backend is running!" });
 });
 
+// Version endpoint - to verify deployment
+app.get("/api/version", (req, res) => {
+  res.json({ 
+    version: "3.0", 
+    timestamp: Date.now(),
+    commit: process.env.GIT_COMMIT || "unknown"
+  });
+});
+
 // Helper: Run yt-dlp
 function runYtDlp(args, onData, onEnd, onError) {
   const proc = spawn(YTDLP, args);
@@ -195,12 +204,14 @@ app.post("/api/info", (req, res) => {
 
   console.log("[/api/info] Fetching metadata for:", VideoUrl);
 
-  // IMPORTANT: NO -f flag here! Only --dump-json
+  // IMPORTANT: NO -f FLAG HERE! Only --dump-json
   const args = [
     ...getCommonArgs(),
     "--dump-json",
     VideoUrl,
   ];
+
+  console.log("[/api/info] Args:", args.join(" "));
 
   runYtDlp(
     args,
