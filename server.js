@@ -116,7 +116,7 @@ app.get("/api/hello", (req, res) => {
 // Version endpoint
 app.get("/api/version", (req, res) => {
   res.json({ 
-    version: "4.2", 
+    version: "4.3", 
     engine: "untube",
     timestamp: Date.now()
   });
@@ -150,7 +150,6 @@ app.post("/api/info", async (req, res) => {
 
     const durationStr = `${Math.floor(info.duration / 60)}:${(info.duration % 60).toString().padStart(2, "0")}`;
 
-    // Video formats
     const videoFormats = untube.filterFormats(info.formats, 'video')
       .filter(f => f.resolution && f.resolution !== 'audio only')
       .sort((a, b) => {
@@ -166,7 +165,6 @@ app.post("/api/info", async (req, res) => {
         filesize: f.filesize || null
       }));
 
-    // Audio formats
     const audioFormats = untube.filterFormats(info.formats, 'audioonly')
       .sort((a, b) => (b.abr || 0) - (a.abr || 0))
       .slice(0, 3)
@@ -209,6 +207,8 @@ app.post("/api/info", async (req, res) => {
 app.get("/api/download", async (req, res) => {
   const { url, formatId, title, type } = req.query;
 
+  console.log(`[/api/download] Request received: url=${url}, formatId=${formatId}, type=${type}`);
+
   if (!url || !formatId) {
     return res.status(400).json({ error: "Parameters 'url' and 'formatId' are required." });
   }
@@ -222,49 +222,53 @@ app.get("/api/download", async (req, res) => {
   const ext = type === "music" ? "mp3" : "mp4";
   const contentType = type === "music" ? "audio/mpeg" : "video/mp4";
 
-  console.log(`[/api/download] Streaming: "${safeTitle}" formatId=${formatId} type=${type}`);
-
-  res.setHeader("Content-Type", contentType);
-  res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.${ext}"`);
+  console.log(`[/api/download] Streaming: "${safeTitle}" videoId=${videoId} formatId=${formatId} type=${type}`);
 
   try {
     const cookieOption = existsSync("./cookies.txt") ? { cookies: "./cookies.txt" } : {};
     
+    // For audio, we need to use bestaudio format
+    let formatToUse = formatId;
     if (type === "music") {
-      // For audio, use untube with extract-audio option
-      const stream = untube(videoId, {
-        format: formatId,
-        ...cookieOption
-      });
-
-      stream.on('error', (err) => {
-        console.error("[/api/download] Audio stream error:", err.message);
-        if (!res.headersSent) {
-          res.status(500).json({ error: "Audio download failed: " + err.message });
-        }
-      });
-
-      stream.pipe(res);
-      
-    } else {
-      // For video
-      const stream = untube(videoId, {
-        format: formatId,
-        ...cookieOption
-      });
-
-      stream.on('error', (err) => {
-        console.error("[/api/download] Video stream error:", err.message);
-        if (!res.headersSent) {
-          res.status(500).json({ error: "Video download failed: " + err.message });
-        }
-      });
-
-      stream.pipe(res);
+      // Get video info to find the best audio format
+      const info = await untube.getVideoInfo(videoId, cookieOption);
+      const audioFormats = untube.filterFormats(info.formats, 'audioonly');
+      const bestAudio = audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
+      if (bestAudio) {
+        formatToUse = bestAudio.format_id;
+        console.log(`[/api/download] Using best audio format: ${formatToUse} (${bestAudio.abr}kbps)`);
+      }
     }
+    
+    const stream = untube(videoId, {
+      format: formatToUse,
+      ...cookieOption
+    });
+
+    // Set headers before piping
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.${ext}"`);
+    
+    stream.on('info', (info, format) => {
+      console.log(`[/api/download] Download started: ${info.title}, Format: ${format.resolution || format.abr || 'audio'}`);
+    });
+
+    stream.on('progress', (progress) => {
+      console.log(`[/api/download] Progress: ${progress.percent || 0}%`);
+    });
+
+    stream.on('error', (err) => {
+      console.error("[/api/download] Stream error:", err.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Download failed: " + err.message });
+      }
+    });
+
+    stream.pipe(res);
 
     req.on("close", () => {
       console.log("[/api/download] Client disconnected.");
+      stream.destroy();
     });
 
   } catch (error) {
