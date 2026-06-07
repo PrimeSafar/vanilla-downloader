@@ -108,16 +108,11 @@ const getCommonArgs = () => {
   if (existsSync("./cookies.txt")) {
     console.log("[yt-dlp] Using cookies from ./cookies.txt");
     args.push("--cookies", "./cookies.txt");
-  } else {
-    console.log("[yt-dlp] WARNING: No cookies file found!");
   }
   
-  // ==========================================================
-  // PO TOKEN PROVIDER SUPPORT - Bypasses YouTube bot detection
-  // ==========================================================
-  args.push("--extractor-args", "youtube:player_client=web,mweb,android");
-  args.push("--extractor-args", "youtube:po_token=web+PROVIDER");
-  args.push("--extractor-args", "youtubepot-bgutilhttp:base_url=http://localhost:4416");
+  // Simple PO token flag - no external provider needed
+  args.push("--extractor-args", "youtube:player_client=mweb,web,android");
+  args.push("--extractor-args", "youtube:po_token=web");
   
   return args;
 };
