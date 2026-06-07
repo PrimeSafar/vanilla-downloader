@@ -89,7 +89,7 @@ console.log(`[yt-dlp] Using binary: ${YTDLP}`);
 console.log(`[yt-dlp] Binary exists check: ${existsSync("./yt-dlp")}`);
 
 // ==========================================================
-// COMMON ARGS with PO TOKEN PROVIDER SUPPORT
+// COMMON ARGS with PO Token Support
 // ==========================================================
 const getCommonArgs = () => {
   const args = [
@@ -108,9 +108,11 @@ const getCommonArgs = () => {
   if (existsSync("./cookies.txt")) {
     console.log("[yt-dlp] Using cookies from ./cookies.txt");
     args.push("--cookies", "./cookies.txt");
+  } else {
+    console.log("[yt-dlp] WARNING: No cookies file found!");
   }
   
-  // Simple PO token flag - no external provider needed
+  // PO Token support - helps bypass bot detection
   args.push("--extractor-args", "youtube:player_client=mweb,web,android");
   args.push("--extractor-args", "youtube:po_token=web");
   
@@ -395,17 +397,24 @@ app.get("/api/download", (req, res) => {
   });
 });
 
-// Serve static frontend files
+// Serve compiled static Vite frontend files
 const __dirname = path.resolve();
 app.use(express.static(path.join(__dirname, "dist")));
 
-// 404 for API routes
+// Return 404 JSON for unmatched /api/ routes
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint not found." });
 });
 
-// Fallback for SPA
-app.get("/*", (req, res) => {
+// ==========================================================
+// FALLBACK ROUTE - FIXED for Express v5 compatibility
+// Using regex pattern instead of string pattern
+// ==========================================================
+app.get(/.*/, (req, res) => {
+  // Don't interfere with API routes
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: "API endpoint not found." });
+  }
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
