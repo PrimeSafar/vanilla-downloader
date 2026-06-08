@@ -1,6 +1,6 @@
 import express from "express";
 import { exec } from "child_process";
-import { writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -10,27 +10,81 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const DEFAULT_COOKIE_PATHS = [
+  "./cookies.txt",
+  "./www.youtube.com_cookies.txt",
+];
+
+function normalizeCookieText(cookieText) {
+  return cookieText.replace(/\\n/g, "\n").trim() + "\n";
+}
+
+function countCookieLines(cookieText) {
+  return cookieText.split("\n").filter(Boolean).length;
+}
+
+function findCookiePath() {
+  if (process.env.YT_COOKIE_PATH && existsSync(process.env.YT_COOKIE_PATH)) {
+    return process.env.YT_COOKIE_PATH;
+  }
+
+  return DEFAULT_COOKIE_PATHS.find((cookiePath) => existsSync(cookiePath)) || null;
+}
+
+function getCookieOption() {
+  if (process.env.DISABLE_YT_COOKIES === "true") {
+    return {};
+  }
+
+  const cookiePath = findCookiePath();
+  if (!cookiePath) {
+    return {};
+  }
+
+  return { cookies: cookiePath };
+}
+
+function logCookieStatus() {
+  const cookiePath = findCookiePath();
+  if (!cookiePath) {
+    console.log("[Setup] No cookies file found");
+    return;
+  }
+
+  try {
+    const cookieText = readFileSync(cookiePath, "utf8");
+    console.log(
+      `[Setup] Using cookies from ${cookiePath}. Size: ${cookieText.length} bytes, Lines: ${countCookieLines(cookieText)}`,
+    );
+  } catch (err) {
+    console.error("[Setup] Failed to read cookies:", err.message);
+  }
+}
 
 // ==========================================================
 // COOKIE INJECTOR
 // ==========================================================
 if (process.env.YT_COOKIES_BASE64) {
   try {
-    const decodedCookies = Buffer.from(process.env.YT_COOKIES_BASE64, 'base64').toString('utf8');
+    const decodedCookies = normalizeCookieText(Buffer.from(process.env.YT_COOKIES_BASE64, "base64").toString("utf8"));
     writeFileSync("./cookies.txt", decodedCookies);
-    const lines = decodedCookies.split('\n').length;
-    console.log(`[Setup] cookies.txt written from BASE64. Size: ${decodedCookies.length} bytes, Lines: ${lines}`);
+    console.log(
+      `[Setup] cookies.txt written from BASE64. Size: ${decodedCookies.length} bytes, Lines: ${countCookieLines(decodedCookies)}`,
+    );
   } catch (err) {
     console.error("[Setup] Base64 decode failed:", err.message);
   }
 } else if (process.env.YT_COOKIES) {
   try {
-    writeFileSync("./cookies.txt", process.env.YT_COOKIES);
+    const decodedCookies = normalizeCookieText(process.env.YT_COOKIES);
+    writeFileSync("./cookies.txt", decodedCookies);
     console.log("[Setup] cookies.txt written from YT_COOKIES");
   } catch (err) {
     console.error("[Setup] Failed to write cookies.txt:", err.message);
   }
 }
+
+logCookieStatus();
 
 // Rate limiting
 const requestCounts = new Map();
@@ -152,6 +206,36 @@ app.get("/api/yt-version", (req, res) => {
   });
 });
 
+app.get("/api/cookie-status", (req, res) => {
+  const cookiePath = findCookiePath();
+
+  if (!cookiePath) {
+    return res.json({
+      enabled: process.env.DISABLE_YT_COOKIES !== "true",
+      found: false,
+    });
+  }
+
+  try {
+    const cookieText = readFileSync(cookiePath, "utf8");
+    return res.json({
+      enabled: process.env.DISABLE_YT_COOKIES !== "true",
+      found: true,
+      path: cookiePath,
+      size: cookieText.length,
+      lines: countCookieLines(cookieText),
+      hasNetscapeHeader: cookieText.includes("Netscape HTTP Cookie File"),
+    });
+  } catch (error) {
+    return res.json({
+      enabled: process.env.DISABLE_YT_COOKIES !== "true",
+      found: true,
+      path: cookiePath,
+      error: error.message,
+    });
+  }
+});
+
 // ==========================================================
 // POST /api/info - Get video metadata
 // ==========================================================
@@ -173,6 +257,7 @@ app.post("/api/info", async (req, res) => {
       dumpSingleJson: true,
       noPlaylist: true,
       noWarnings: true,
+      ...getCookieOption(),
     });
 
     const durationStr = `${Math.floor(info.duration / 60)}:${(info.duration % 60).toString().padStart(2, "0")}`;
@@ -258,6 +343,7 @@ app.get("/api/download", async (req, res) => {
         output: "-",
         noPlaylist: true,
         noWarnings: true,
+        ...getCookieOption(),
       };
       
       // Use formatId or bestaudio
@@ -273,6 +359,7 @@ app.get("/api/download", async (req, res) => {
         output: "-",
         noPlaylist: true,
         noWarnings: true,
+        ...getCookieOption(),
       };
     }
     
