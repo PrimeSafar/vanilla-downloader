@@ -1,5 +1,6 @@
 import express from "express";
-import { existsSync, writeFileSync } from "fs";
+import { exec } from "child_process";
+import { writeFileSync } from "fs";
 import path from "path";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -122,6 +123,35 @@ app.get("/api/version", (req, res) => {
   });
 });
 
+app.get("/api/debug", async (req, res) => {
+  try {
+    const result = await youtubeDl("https://youtu.be/lfp9y6gcxH0", {
+      dumpSingleJson: true,
+    });
+
+    res.json({
+      success: true,
+      title: result.title,
+    });
+  } catch (error) {
+    res.json({
+      message: error.message,
+      stderr: error.stderr,
+      stdout: error.stdout,
+    });
+  }
+});
+
+app.get("/api/yt-version", (req, res) => {
+  exec("./node_modules/youtube-dl-exec/bin/yt-dlp --version", (err, stdout, stderr) => {
+    res.json({
+      stdout,
+      stderr,
+      error: err?.message,
+    });
+  });
+});
+
 // ==========================================================
 // POST /api/info - Get video metadata
 // ==========================================================
@@ -139,17 +169,10 @@ app.post("/api/info", async (req, res) => {
   console.log("[/api/info] Fetching metadata for:", videoUrl);
 
   try {
-    const cookieOption = existsSync("./cookies.txt") ? { cookies: "./cookies.txt" } : {};
-    
     const info = await youtubeDl(videoUrl, {
       dumpSingleJson: true,
       noPlaylist: true,
       noWarnings: true,
-      addHeader: [
-        'referer:https://www.youtube.com/',
-        'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      ],
-      ...cookieOption
     });
 
     const durationStr = `${Math.floor(info.duration / 60)}:${(info.duration % 60).toString().padStart(2, "0")}`;
@@ -226,8 +249,6 @@ app.get("/api/download", async (req, res) => {
   res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.${ext}"`);
 
   try {
-    const cookieOption = existsSync("./cookies.txt") ? { cookies: "./cookies.txt" } : {};
-    
     let args;
     if (type === "music") {
       args = {
@@ -237,11 +258,6 @@ app.get("/api/download", async (req, res) => {
         output: "-",
         noPlaylist: true,
         noWarnings: true,
-        addHeader: [
-          'referer:https://www.youtube.com/',
-          'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        ],
-        ...cookieOption
       };
       
       // Use formatId or bestaudio
@@ -257,11 +273,6 @@ app.get("/api/download", async (req, res) => {
         output: "-",
         noPlaylist: true,
         noWarnings: true,
-        addHeader: [
-          'referer:https://www.youtube.com/',
-          'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        ],
-        ...cookieOption
       };
     }
     
